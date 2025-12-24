@@ -1,6 +1,6 @@
 # DevOps Final Project (Mini Lab)
 
-This repository is a mini DevOps platform + delivery pipeline built as a home lab for Telerik DevOps fina exam.
+This repository is a mini DevOps platform + delivery pipeline built as a home lab.
 
 Goal: **fully automated software delivery** starting from Git, using **CI**, **CD (GitOps)**, **Kubernetes**, **Vault**, **observability**, and **security gates**, with infrastructure/bootstrap automated via **Ansible**.
 
@@ -44,12 +44,22 @@ Goal: **fully automated software delivery** starting from Git, using **CI**, **C
 ### Lab topology (hardware mapping)
 - **Main PC (Control workstation)**: i9-14900K / 48GB RAM / 2TB NVMe  
   Used only for control: VS Code, kubectl, helm, ansible, browser dashboards (no workloads)
-- **hp-prodesk-1 (HP ProDesk 600 G4)**: i5-8500 / 16GB RAM / 1TB NVMe  
-  Runs: k3s server + GitHub Actions self-hosted runner + local registry
-- **hp-prodesk-2 (HP ProDesk 600 G4)**: i5-8500 / 16GB RAM / 1TB NVMe  
-  Runs: k3s agent node
-- **hp-prodesk-3 (HP ProDesk 600 G4)**: i5-8500 / 16GB RAM / 1TB NVMe  
-  Runs: k3s agent node
+
+- **hp-prodesk-1 (HP ProDesk 600 G4)**: i5-8500 / 16GB RAM / 2×512GB NVMe  
+  - OS install: **use one 512GB NVMe for Ubuntu Server**
+  - Second 512GB NVMe: **kept free for future `/data`** (optional later)
+  - Runs: k3s server + GitHub Actions self-hosted runner + local registry
+
+- **hp-prodesk-2 (HP ProDesk 600 G4)**: i5-8500 / 16GB RAM / 2×512GB NVMe  
+  - OS install: **use one 512GB NVMe for Ubuntu Server**
+  - Second 512GB NVMe: **kept free for future `/data`** (optional later)
+  - Runs: k3s agent node
+
+- **hp-prodesk-3 (HP ProDesk 600 G4)**: i5-8500 / 16GB RAM / 2×512GB NVMe  
+  - OS install: **use one 512GB NVMe for Ubuntu Server**
+  - Second 512GB NVMe: **kept free for future `/data`** (optional later)
+  - Runs: k3s agent node
+
 - **NAS (Zyxel 326)**: NFS storage for registry and Kubernetes PVs (Vault/Postgres/monitoring)
 
 ---
