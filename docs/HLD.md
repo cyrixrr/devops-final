@@ -12,6 +12,13 @@ Developer workflow:
 - Merge to main triggers build + release
 - GitOps update triggers deploy
 
+## Platform bootstrap (as code)
+Before Kubernetes is installed, the lab nodes are prepared using **Ansible** (baseline playbook):
+- consistent packages/tooling
+- swap disabled + kernel/sysctl settings for Kubernetes prerequisites
+**This step prepares nodes only; k3s installation is a separate step.**
+
+
 Runtime platform:
 - k3s Kubernetes cluster (3 nodes)
 - Argo CD for GitOps deployments

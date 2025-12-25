@@ -24,3 +24,9 @@ From main PC:
 ssh stefanl@192.168.0.100 "hostname"
 ssh stefanl@192.168.0.101 "hostname"
 ssh stefanl@192.168.0.102 "hostname"
+
+### Baseline vs k3s
+`01-baseline.yml` prepares the nodes for Kubernetes:
+- packages, time sync, swap off, kernel modules, sysctl
+**It doesn’t install k3s yet — it just makes the machines “Kubernetes-ready”.**
+
