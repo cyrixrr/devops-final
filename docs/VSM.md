@@ -1,64 +1,47 @@
-
----
-
-## `docs/VSM.md`
-```markdown
 # Value Stream Map (VSM)
 
-Last updated: 2025-12-25
+## Value: From code change to running safely in Kubernetes (with evidence)
 
-## Value: From code change to running safely in Kubernetes with evidence
-
-### Current working state (today)
-GitOps CD path is already working:
-- Git → Argo CD → k3s deploy → app reachable
-
-### Target end state (final exam)
-GitHub PR → CI gates → build image → scan → push → GitOps commit → Argo CD deploy → Vault secrets → metrics.
-
----
-
-## Stages
-
-1) Code + PR
+### Stage 1) Code + PR
 - Output: reviewable change
-- Gate: PR rules (review + checks)
+- Gate: PR rules (review, checks)
 
-2) CI Security & Quality (PR pipeline) *(planned next)*
-- gitleaks (secrets)
+### Stage 2) CI Quality & Security (PR pipeline – planned/optional)
+- gitleaks (hardcoded secrets)
 - lint + unit tests
 - semgrep (SAST)
+- trivy (vulnerability scan)
 - Output: green checks
 
-3) Build & Package (main pipeline) *(planned next)*
+### Stage 3) Build & Package (main pipeline)
 - Build Docker image (immutable artifact)
-- Tag with git SHA / build number
+- Tag with commit SHA
 - Output: image
 
-4) Publish *(planned next)*
-- Push image to registry
+### Stage 4) Publish
+- Push image to GHCR:
+  - `ghcr.io/cyrixrr/myapp:<commit_sha>`
+  - `ghcr.io/cyrixrr/myapp:latest`
 - Output: published artifact
 
-5) GitOps Update (CD trigger) *(planned next)*
-- Pipeline updates GitOps overlay with new image tag and commits
+### Stage 5) GitOps Update (CD trigger)
+- Pipeline updates GitOps manifests to the same commit SHA:
+  - `image: ghcr.io/cyrixrr/myapp:<commit_sha>`
+  - env: `APP_VERSION=<commit_sha>`, `GIT_SHA=<commit_sha>`
+- Pipeline commits this to Git:
+  - commit message like `gitops: deploy <sha>`
 - Output: Git becomes the source of truth for desired state
 
-6) Deploy (Argo CD) *(DONE today)*
-- Argo syncs desired state to k3s
-- Output: rollout completed
+### Stage 6) Deploy (Argo CD)
+- Argo CD detects Git change and syncs to k3s
+- Output: rollout completed, app Healthy
 
-7) Verify + Observe *(partially done; metrics planned)*
-- Smoke test: app reachable
-- Later: Grafana dashboards and alerts
-- Output: evidence of success
+### Stage 7) Verify + Observe
+- Verify externally:
+  - `/health`
+  - `/version` returns the running commit SHA (proof)
+- (Planned) Prometheus/Grafana dashboards for metrics evidence
 
----
-
-## Demo lead time targets (final)
-- PR checks: < 2 minutes
-- Main pipeline → deployed: < 3 minutes
-
-## What is already proven in the lab (today)
-- Argo CD pulls from the repo and applies Kustomize overlay
-- GitOps deployment works end-to-end: Git → Argo CD → k3s → running Pod/Service
-- Service exposure can be controlled as code via overlay patches (NodePort)
+## Demo lead time targets
+- CI job: a couple of minutes (depends on runner)
+- GitOps sync + rollout: ~1 minute

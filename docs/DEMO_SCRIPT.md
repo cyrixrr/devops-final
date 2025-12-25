@@ -2,48 +2,47 @@
 ---
 
 ## `docs/DEMO_SCRIPT.md`
-```markdown
+```md
 # Demo Script (Draft)
 
 ## Tabs open (prepare in advance)
-- GitHub repo (PR view)
+- GitHub repo (Commits / PR view)
 - GitHub Actions (latest runs)
-- Argo CD UI: `https://192.168.0.100:30443`
-- App URL (NodePort): `http://192.168.0.100:32094`
-- Grafana dashboard (later milestone)
-- (Optional) Vault UI/CLI tab for deep dive (later milestone)
+- Argo CD UI (Application view)
+- Terminal: kubectl checks
+- App `/version` endpoint (browser tab or curl)
 
-## Preset environment rule
-- k3s cluster is already running
-- Argo CD installed via Helm and reachable via NodePort
-- GitOps app exists and is synced (no waiting)
-- Monitoring/Vault/CI will be added next (when ready)
+## Preset environment rule (avoid waiting)
+- k3s cluster already running
+- Argo CD already installed and reachable
+- myapp already registered in Argo CD (Application exists)
+- One successful GH Actions run already exists (so you can show logs quickly)
 
 ---
 
 ## Order (12–15 minutes)
 
 ### 1) High-level solution design (1–2 min)
-- One sentence flow: **GitHub → CI gates → build image → scan → push → GitOps commit → Argo CD deploy → observe**
-- Mention secrets: **Vault (no secrets in Git)** (planned deep dive)
+Say the flow:
+**GitHub → CI → build image → push GHCR → GitOps commit → Argo CD sync → k3s deploy → /version proof**
+Mention: Git is the source of truth for desired state (GitOps).
 
 ### 2) Low-level design + lab topology (1–2 min)
-- Show node roles + IPs:
-  - `dell-optiplex-1` (k3s server) `192.168.0.100`
-  - `hp-prodesk-1` (agent) `192.168.0.101`
-  - `hp-prodesk-2` (agent) `192.168.0.102`
+Show node roles + IPs:
+- dell-optiplex-1 (server) 192.168.0.100
+- hp-prodesk-1 (agent) 192.168.0.101
+- hp-prodesk-2 (agent) 192.168.0.102
 
-### 3) “As code” bootstrap (Ansible + Helm + GitOps) (2 min)
-- Ansible:
-  - `platform/ansible/playbooks/01-baseline.yml` (prep only)
-  - `platform/ansible/playbooks/03-k3s.yml` (install cluster)
-- Helm:
-  - `platform/helm/argocd-values.yaml` (NodePorts pinned)
-- GitOps:
-  - `gitops/apps/myapp/...` (Kustomize + Argo App)
+### 3) “As code” bootstrap (Ansible) (1 min)
+Show:
+- `platform/ansible/playbooks/01-baseline.yml` (k8s readiness)
+- `platform/ansible/playbooks/03-k3s.yml` (k3s install + kubeconfig fetch)
 
-Quick proof:
+### 4) GitOps structure (Kustomize + Argo) (1–2 min)
+Show Kustomize:
+- base + overlay:
+  - `gitops/apps/myapp/base`
+  - `gitops/apps/myapp/overlays/dev`
+Render quickly:
 ```bash
-kubectl --kubeconfig ~/git/devops-final/kubeconfig/k3s.yaml get nodes -o wide
-kubectl -n argocd get applications
-kubectl -n myapp get pods -o wide
+kubectl kustomize gitops/apps/myapp/overlays/dev | sed -n '1,80p'

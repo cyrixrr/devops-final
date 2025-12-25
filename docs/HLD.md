@@ -1,60 +1,44 @@
 # High-Level Design (HLD)
 
-Last updated: 2025-12-25
-
 ## Goal
-Build an automated software delivery process in a home lab:
-**GitHub → CI gates → build image → scan → push → GitOps commit → Argo CD deploy → observe**
-with **Vault** for secrets (deep dive vertical).
+Build an automated software delivery process (CI + CD) in a home lab:
+
+**GitHub → CI gates → build Docker image → push to GHCR → GitOps commit → Argo CD sync → k3s deploy → verify (/version) → (later) observability + Vault**
 
 ## Architecture Overview
-### Control workstation (Main PC)
-Used only as a control unit:
-- VS Code + Git
-- Ansible
-- kubectl/helm
-- Browser for Argo CD UI
 
-### Lab topology (compute)
-- `dell-optiplex-1` (192.168.0.100): **k3s server** (control-plane)
-- `hp-prodesk-1` (192.168.0.101): **k3s agent**
-- `hp-prodesk-2` (192.168.0.102): **k3s agent**
-- NAS Zyxel 326: planned NFS storage for PVs (optional later)
+### Code and delivery flow
+1. Developer pushes code to GitHub (feature branch / main)
+2. CI runs (tests + security gates) on GitHub Actions
+3. Build an immutable Docker image and push to GHCR:
+   - `ghcr.io/cyrixrr/myapp:<commit_sha>`
+   - `ghcr.io/cyrixrr/myapp:latest`
+4. Pipeline updates GitOps manifests (as code) to use `<commit_sha>`
+5. Argo CD detects Git change and reconciles desired state into Kubernetes (k3s)
+6. App is reachable via NodePort; `/version` shows the deployed commit SHA
 
-### Platform components (current + planned)
-**Current (already working):**
-- k3s Kubernetes cluster (installed via Ansible)
-- Argo CD (installed via Helm; exposed via NodePort)
-- GitOps application example (`myapp`) deployed from repo via Argo CD
+### Runtime platform
+- **k3s (3 nodes)** for Kubernetes
+- **Argo CD** for GitOps (continuous delivery)
+- **Kustomize** for Kubernetes manifest composition (base + overlays)
+- **GHCR** (GitHub Container Registry) for container images
+- (Planned) **Vault** for secrets management and deep dive
+- (Planned) **Prometheus/Grafana** for observability evidence
 
-**Planned next:**
-- CI pipelines (GitHub Actions): gitleaks, lint/tests, semgrep, trivy, build/push image
-- Registry (local or GHCR)
-- Observability (Prometheus + Grafana)
-- Vault (Kubernetes auth + dynamic DB creds) + deep dive
-- Postgres + migrations
-- Optional NFS PVs from NAS
+## Lab topology (hardware mapping)
+- **Control workstation (main PC)**: VS Code, kubectl, helm, ansible, browser
+- **dell-optiplex-1** (192.168.0.100): k3s server (control-plane)
+- **hp-prodesk-1** (192.168.0.101): k3s agent
+- **hp-prodesk-2** (192.168.0.102): k3s agent
+- **NAS (Zyxel 326)**: planned NFS storage (optional later)
 
-## Current implemented slice (already proven)
-✅ GitOps CD path:
-- GitHub repo contains Kustomize manifests under `gitops/`
-- Argo CD syncs from `main` and deploys to k3s automatically
-- Sample app (`myapp`) is deployed and reachable via NodePort
+## “As code” principle
+- Kubernetes manifests: `gitops/`
+- Bootstrap/cluster install: `platform/ansible/`
+- CI pipelines: `.github/workflows/`
+- Documentation: `docs/`
 
-✅ “As code” platform layer:
-- k3s installed via Ansible playbook
-- Argo CD installed via Helm values file
-- app exposure controlled via GitOps overlay patch (NodePort)
+## Deep dive vertical (chosen)
+**GitOps** (Argo CD + Kustomize) + automated GitOps updates from CI.
 
-## Demo entry points (today)
-- Argo CD UI (HTTPS): `https://192.168.0.100:30443`
-- Sample app (`myapp`): `http://192.168.0.100:32094`
-
-## Topics covered already (from course list)
-- Source control
-- Infrastructure as code (Ansible, Helm values, GitOps manifests)
-- Kubernetes
-- Continuous Delivery (GitOps)
-- Docker (used for runtime later; app image build planned)
-- Security + secrets management (planned via Vault)
-- Observability (planned)
+(Next deep dive planned: Vault)
