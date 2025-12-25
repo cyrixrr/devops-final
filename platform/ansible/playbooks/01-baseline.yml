@@ -1,0 +1,68 @@
+- name: Baseline setup for all lab nodes
+  hosts: k3s
+  become: true
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install baseline packages
+      ansible.builtin.apt:
+        name:
+          - curl
+          - wget
+          - ca-certificates
+          - gnupg
+          - jq
+          - htop
+          - vim
+          - git
+          - nfs-common
+          - net-tools
+          - unzip
+          - chrony
+        state: present
+
+    - name: Ensure chrony is enabled and running
+      ansible.builtin.service:
+        name: chrony
+        enabled: true
+        state: started
+
+    - name: Disable swap immediately (k8s requirement)
+      ansible.builtin.command: swapoff -a
+      changed_when: false
+
+    - name: Comment out swap in /etc/fstab (k8s requirement)
+      ansible.builtin.replace:
+        path: /etc/fstab
+        regexp: '^\s*([^#\n]+\s+[^#\n]+\s+swap\s+[^#\n]+.*)$'
+        replace: '# \1'
+
+    - name: Load kernel modules needed by Kubernetes
+      ansible.builtin.copy:
+        dest: /etc/modules-load.d/k8s.conf
+        content: |
+          overlay
+          br_netfilter
+
+    - name: Ensure modules are loaded now
+      ansible.builtin.shell: |
+        modprobe overlay
+        modprobe br_netfilter
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Set sysctl params for Kubernetes networking
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/99-kubernetes-cri.conf
+        content: |
+          net.bridge.bridge-nf-call-iptables  = 1
+          net.bridge.bridge-nf-call-ip6tables = 1
+          net.ipv4.ip_forward                 = 1
+
+    - name: Apply sysctl params
+      ansible.builtin.command: sysctl --system
+      changed_when: false
