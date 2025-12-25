@@ -9,7 +9,7 @@ permissions:
   packages: write
 
 jobs:
-  test-build-push:
+  test-build-push-and-gitops:
     runs-on: ubuntu-latest
 
     steps:
@@ -47,3 +47,39 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/myapp:${{ github.sha }}
             ghcr.io/${{ github.repository_owner }}/myapp:latest
+
+      - name: Update GitOps manifest to new image tag (commit SHA)
+        run: |
+          set -e
+
+          DEPLOY_FILE="gitops/apps/myapp/base/deployment.yaml"
+
+          echo "Updating $DEPLOY_FILE to use image tag ${GITHUB_SHA}"
+          sed -i "s#image: ghcr.io/cyrixrr/myapp:.*#image: ghcr.io/cyrixrr/myapp:${GITHUB_SHA}#g" "$DEPLOY_FILE"
+
+          echo "Updating env vars (APP_VERSION and GIT_SHA)"
+          sed -i "s/name: APP_VERSION\\n\\s*value:.*$/name: APP_VERSION\\n              value: \"${GITHUB_SHA}\"/g" "$DEPLOY_FILE" || true
+          sed -i "s/name: GIT_SHA\\n\\s*value:.*$/name: GIT_SHA\\n              value: \"${GITHUB_SHA}\"/g" "$DEPLOY_FILE" || true
+
+          # Fallback: if the above patterns don't match exactly, do simpler replacements:
+          sed -i "s#value: \"latest\"#value: \"${GITHUB_SHA}\"#g" "$DEPLOY_FILE"
+          sed -i "s#value: \"manual\"#value: \"${GITHUB_SHA}\"#g" "$DEPLOY_FILE"
+
+          echo "Result:"
+          grep -n "image:\\|APP_VERSION\\|GIT_SHA" "$DEPLOY_FILE" || true
+
+      - name: Commit and push GitOps change
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Only commit if something changed
+          if git diff --quiet; then
+            echo "No GitOps changes to commit."
+            exit 0
+          fi
+
+          git add gitops/apps/myapp/base/deployment.yaml
+          git commit -m "gitops: deploy ${GITHUB_SHA}"
+          git push
