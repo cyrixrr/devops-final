@@ -42,24 +42,24 @@ Goal: **fully automated software delivery** starting from Git, using **CI**, **C
 - Pipelines live in `.github/workflows/`
 
 ### Lab topology (hardware mapping)
+
+**Control workstation**
 - **Main PC (Control workstation)**: i9-14900K / 48GB RAM / 2TB NVMe  
   Used only for control: VS Code, kubectl, helm, ansible, browser dashboards (no workloads)
 
-- **hp-prodesk-1 (HP ProDesk 600 G4)**: i5-8500 / 16GB RAM / 2×512GB NVMe  
-  - OS install: **use one 512GB NVMe for Ubuntu Server**
-  - Second 512GB NVMe: **kept free for future `/data`** (optional later)
-  - Runs: k3s server + GitHub Actions self-hosted runner + local registry
+**Kubernetes nodes (reserved IPs)**
+- **dell-optiplex-1 (Dell OptiPlex 3070)** — **192.168.0.100**  
+  Role: **k3s server (control-plane)**
 
-- **hp-prodesk-2 (HP ProDesk 600 G4)**: i5-8500 / 16GB RAM / 2×512GB NVMe  
-  - OS install: **use one 512GB NVMe for Ubuntu Server**
-  - Second 512GB NVMe: **kept free for future `/data`** (optional later)
-  - Runs: k3s agent node
+- **hp-prodesk-1 (HP ProDesk 600 G4)** — **192.168.0.101**  
+  Role: **k3s agent node**  
+  Storage: i5-8500 / 16GB RAM / 2×512GB NVMe (Ubuntu installed on one 512GB; second kept free for future `/data`)
 
-- **hp-prodesk-3 (HP ProDesk 600 G4)**: i5-8500 / 16GB RAM / 2×512GB NVMe  
-  - OS install: **use one 512GB NVMe for Ubuntu Server**
-  - Second 512GB NVMe: **kept free for future `/data`** (optional later)
-  - Runs: k3s agent node
+- **hp-prodesk-2 (HP ProDesk 600 G4)** — **192.168.0.102**  
+  Role: **k3s agent node**  
+  Storage: i5-8500 / 16GB RAM / 2×512GB NVMe (Ubuntu installed on one 512GB; second kept free for future `/data`)
 
+**Shared storage**
 - **NAS (Zyxel 326)**: NFS storage for registry and Kubernetes PVs (Vault/Postgres/monitoring)
 
 ---
