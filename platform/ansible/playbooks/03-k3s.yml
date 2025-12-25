@@ -62,13 +62,13 @@
       become: true
       ansible.builtin.fetch:
         src: /etc/rancher/k3s/k3s.yaml
-        dest: ./kubeconfig/k3s.yaml
+        dest: "{{ lookup('env','HOME') }}/git/devops-final/kubeconfig/k3s.yaml"
         flat: true
 
     - name: Replace localhost with server IP in fetched kubeconfig (no sudo on localhost)
       delegate_to: localhost
       become: false
       ansible.builtin.replace:
-        path: ./kubeconfig/k3s.yaml
+        path: "{{ lookup('env','HOME') }}/git/devops-final/kubeconfig/k3s.yaml"
         regexp: '127\.0\.0\.1'
         replace: '192.168.0.100'

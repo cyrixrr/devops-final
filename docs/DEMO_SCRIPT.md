@@ -3,17 +3,18 @@
 ## Tabs open (prepare in advance)
 - GitHub repo (PR view)
 - GitHub Actions (latest runs)
-- Argo CD (Application view)
-- App `/version` endpoint (browser tab or curl)
-- Grafana dashboard (or Prometheus targets page)
-- (Optional) Vault UI/CLI tab for deep dive
+- Argo CD UI (Application view): `https://192.168.0.100:32422`
+- App `/version` endpoint (browser tab or curl) *(after app is deployed)*
+- Grafana dashboard (or Prometheus targets page) *(after monitoring is deployed)*
+- (Optional) Vault UI/CLI tab for deep dive *(after Vault is deployed)*
 
 ## Preset environment rule
 - k3s cluster is already running
-- Argo CD already connected to GitOps repo
-- Vault already unsealed and configured
-- Monitoring already running (Prometheus/Grafana)
-- Pipeline caches warmed (avoid long waits)
+- Argo CD installed via Helm and reachable via NodePort
+- Argo CD already connected to GitOps repo *(once we add the Application)*
+- Monitoring already running (Prometheus/Grafana) *(later milestone)*
+- Vault already unsealed and configured *(later milestone)*
+- Pipeline caches warmed (avoid long waits) *(later milestone once CI is ready)*
 
 ---
 
@@ -21,54 +22,27 @@
 
 ### 1) High-level solution design (1–2 min)
 - One sentence flow: **GitHub → CI gates → build image → scan → push → GitOps commit → Argo CD deploy → observe**
-- Mention secrets: **Vault (no secrets in Git)**
+- Mention secrets: **Vault (no secrets in Git)** *(deep dive vertical)*
 
 ### 2) Low-level design + lab topology (1–2 min)
 - Show node roles + IPs:
   - `dell-optiplex-1` (k3s server) `192.168.0.100`
   - `hp-prodesk-1` (agent) `192.168.0.101`
   - `hp-prodesk-2` (agent) `192.168.0.102`
-- NAS provides NFS for persistent storage (if used)
+- NAS provides NFS for persistent storage *(planned)*
 
-### 3) “As code” platform bootstrap (Ansible) (1 min)
-- Show repo paths:
+### 3) “As code” platform bootstrap (Ansible + Helm) (1–2 min)
+- Show Ansible repo paths:
   - `platform/ansible/inventory/hosts.ini`
   - `platform/ansible/playbooks/01-baseline.yml`
+  - `platform/ansible/playbooks/03-k3s.yml`
 - Say explicitly:
   - **Baseline doesn’t install k3s — it prepares nodes (swap off, sysctl/modules, packages).**
+- Show Helm values for platform components:
+  - `platform/helm/argocd-values.yaml` (Argo CD NodePort “as code”)
 
-### 4) Repo layout (30–60 sec)
-- `app/`, `db/`, `gitops/`, `.github/workflows/`, `docs/`
-
-### 5) PR pipeline (CI gates) (3–4 min)
-- Open an example PR (already created)
-- Show CI checks:
-  - gitleaks (secrets)
-  - lint + tests
-  - SAST (semgrep)
-  - image/vuln scan (trivy) *(if part of PR pipeline)*
-
-### 6) Merge to main → release pipeline (3–4 min)
-- Show the completed run (preset) or trigger a merge if fast:
-  - build Docker image (immutable)
-  - scan image
-  - push to registry
-  - update GitOps overlay (commit/tag)
-
-### 7) GitOps deploy (Argo CD) (1–2 min)
-- Argo CD detects change, syncs
-- Show rollout status / healthy state
-
-### 8) Validate app + observability (1–2 min)
-- Hit `/version` (shows new tag/commit)
-- Show Grafana (request rate / error rate / latency) or Prometheus target health
-
-### 9) Deep dive (Vault) (2–3 min)
-- k8s auth method → service account → Vault role/policy
-- show secret injection or dynamic DB credentials (TTL)
-
-### 10) Future improvements (30–60 sec)
-- Progressive delivery (Argo Rollouts)
-- Policy as code (OPA/Gatekeeper or Kyverno)
-- Chaos test (Litmus or simple pod kill) + alerting
-- SBOM + provenance (cosign/slsa)
+Quick proof platform is ready:
+```bash
+kubectl --kubeconfig ~/git/devops-final/kubeconfig/k3s.yaml get nodes -o wide
+kubectl -n argocd get pods
+kubectl -n argocd get svc argocd-server -o wide
