@@ -3,3 +3,6 @@ resources:
 
 namespace: myapp
 namePrefix: dev-
+
+patches:
+  - path: service-nodeport-patch.yaml
