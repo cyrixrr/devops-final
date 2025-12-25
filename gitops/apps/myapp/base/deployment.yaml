@@ -14,6 +14,11 @@ spec:
     spec:
       containers:
         - name: myapp
-          image: nginx:1.27
+          image: ghcr.io/cyrixrr/myapp:0.0.0
           ports:
-            - containerPort: 80
+            - containerPort: 8000
+          env:
+            - name: APP_VERSION
+              value: "0.0.0"
+            - name: GIT_SHA
+              value: "manual"
