@@ -22,6 +22,7 @@
           - net-tools
           - unzip
           - chrony
+          - ruff
         state: present
 
     - name: Ensure chrony is enabled and running
