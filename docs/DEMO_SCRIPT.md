@@ -46,3 +46,5 @@ Show Kustomize:
 Render quickly:
 ```bash
 kubectl kustomize gitops/apps/myapp/overlays/dev | sed -n '1,80p'
+
+- PR gates demo trigger: Fri 26 Dec 2025 02:54:35 AM EET
