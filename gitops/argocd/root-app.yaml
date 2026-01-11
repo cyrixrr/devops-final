@@ -1,0 +1,29 @@
+# ------------------------------------------------------------------------------
+# Root "App of Apps"
+#
+# ArgoCD watches gitops/argocd/apps/ and applies every child Application yaml.
+# Adding a new platform component becomes: "drop a new app yaml file into Git".
+# ------------------------------------------------------------------------------
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-apps
+  namespace: argocd
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/cyrixrr/devops-final.git
+    targetRevision: main
+    path: gitops/argocd/apps
+    directory:
+      recurse: true
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

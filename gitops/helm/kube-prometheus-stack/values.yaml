@@ -1,0 +1,33 @@
+# ------------------------------------------------------------------------------
+# kube-prometheus-stack values
+#
+# This Helm chart installs:
+# - Prometheus
+# - Alertmanager
+# - Grafana
+# - exporters (node-exporter, kube-state-metrics)
+#
+# We keep config in Git so ArgoCD can reproduce it anytime.
+# ------------------------------------------------------------------------------
+
+grafana:
+  enabled: true
+
+  # Keep Grafana reachable in the lab via NodePort.
+  service:
+    type: NodePort
+    # Optional: set a fixed port so it doesn't change each install.
+    # If you don't care, remove nodePort and k8s will allocate one.
+    nodePort: 30030
+
+  # Default admin user is "admin"
+  # Password is auto-generated unless you set it (not recommended in Git).
+  # We'll read it from the secret later.
+
+prometheus:
+  enabled: true
+
+alertmanager:
+  enabled: true
+
+# If you later add PV/NFS, we can set persistence here.

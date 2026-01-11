@@ -1,0 +1,50 @@
+# ------------------------------------------------------------------------------
+# Argo CD Application: monitoring (Helm)
+#
+# This tells ArgoCD to install the kube-prometheus-stack Helm chart
+# using values stored in Git (valueFiles).
+# ------------------------------------------------------------------------------
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring-kps
+  namespace: argocd
+spec:
+  project: default
+
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    # Pin a version for reproducibility (optional but recommended)
+    targetRevision: "80.13.3"
+
+    helm:
+      # values file stored in *your* Git repo:
+      valueFiles:
+        - $values/gitops/helm/kube-prometheus-stack/values.yaml
+
+  # This enables ArgoCD "multiple sources":
+  # - one source is the Helm chart repo above
+  # - second source is your Git repo containing the values file
+  sources:
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      chart: kube-prometheus-stack
+      targetRevision: "80.13.3"
+      helm:
+        valueFiles:
+          - $values/gitops/helm/kube-prometheus-stack/values.yaml
+
+    - repoURL: https://github.com/cyrixrr/devops-final.git
+      targetRevision: main
+      ref: values
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
