@@ -13,4 +13,4 @@ def version():
         "version": os.getenv("APP_VERSION", "dev"),
         "commit": os.getenv("GIT_SHA", "unknown")
     }
-#
+# New version
