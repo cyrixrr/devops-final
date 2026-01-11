@@ -48,3 +48,5 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      - ServerSideApply=true  # avoids huge "last-applied-configuration" annotations on CRDs
+
