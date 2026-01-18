@@ -1,0 +1,32 @@
+# ------------------------------------------------------------------------------
+# Argo CD Application: monitoring-extras
+#
+# Purpose:
+# - Apply raw Kubernetes YAML (Kustomize) that complements the Helm chart.
+# - Keeps Helm chart clean and lets us manage dashboards/rules in GitOps.
+# ------------------------------------------------------------------------------
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring-extras
+  namespace: argocd
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/cyrixrr/devops-final.git
+    targetRevision: main
+    path: gitops/monitoring
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # If monitoring namespace does not exist yet, ArgoCD creates it.
+      - CreateNamespace=true
