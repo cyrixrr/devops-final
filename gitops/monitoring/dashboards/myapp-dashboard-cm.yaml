@@ -1,0 +1,242 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: myapp-grafana-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  myapp-dashboard.json: |
+    {
+      "annotations": {
+        "list": [
+          {
+            "builtIn": 1,
+            "datasource": "-- Grafana --",
+            "enable": true,
+            "hide": true,
+            "iconColor": "rgba(0, 211, 255, 1)",
+            "name": "Annotations & Alerts",
+            "type": "dashboard"
+          }
+        ]
+      },
+      "description": "Kubernetes-level view of MyApp using Prometheus metrics from kube-prometheus-stack (no app metrics required).",
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "gnetId": null,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [],
+      "liveNow": false,
+      "panels": [
+        {
+          "datasource": { "uid": "${DS_PROMETHEUS}" },
+          "description": "Desired replicas from the Deployment spec.",
+          "fieldConfig": { "defaults": { "unit": "none" }, "overrides": [] },
+          "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+          "id": 1,
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "orientation": "horizontal", "textMode": "auto" },
+          "pluginVersion": "10.0.0",
+          "targets": [
+            {
+              "expr": "kube_deployment_spec_replicas{namespace=\"$namespace\", deployment=\"$deployment\"}",
+              "legendFormat": "desired",
+              "refId": "A"
+            }
+          ],
+          "title": "Deployment Desired Replicas",
+          "type": "stat"
+        },
+        {
+          "datasource": { "uid": "${DS_PROMETHEUS}" },
+          "description": "Available replicas reported by kube-state-metrics.",
+          "fieldConfig": { "defaults": { "unit": "none" }, "overrides": [] },
+          "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+          "id": 2,
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "orientation": "horizontal", "textMode": "auto" },
+          "pluginVersion": "10.0.0",
+          "targets": [
+            {
+              "expr": "kube_deployment_status_replicas_available{namespace=\"$namespace\", deployment=\"$deployment\"}",
+              "legendFormat": "available",
+              "refId": "A"
+            }
+          ],
+          "title": "Deployment Available Replicas",
+          "type": "stat"
+        },
+        {
+          "datasource": { "uid": "${DS_PROMETHEUS}" },
+          "description": "How many pods are Running for the deployment pattern.",
+          "fieldConfig": { "defaults": { "unit": "none" }, "overrides": [] },
+          "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
+          "id": 3,
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "orientation": "horizontal", "textMode": "auto" },
+          "pluginVersion": "10.0.0",
+          "targets": [
+            {
+              "expr": "sum(kube_pod_status_phase{namespace=\"$namespace\", phase=\"Running\", pod=~\"$deployment-.*\"})",
+              "legendFormat": "running",
+              "refId": "A"
+            }
+          ],
+          "title": "Pods Running",
+          "type": "stat"
+        },
+        {
+          "datasource": { "uid": "${DS_PROMETHEUS}" },
+          "description": "Pods not in Running state (Pending/Failed/Unknown). Useful for troubleshooting rollouts.",
+          "fieldConfig": { "defaults": { "unit": "none" }, "overrides": [] },
+          "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
+          "id": 4,
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "orientation": "horizontal", "textMode": "auto" },
+          "pluginVersion": "10.0.0",
+          "targets": [
+            {
+              "expr": "sum(kube_pod_status_phase{namespace=\"$namespace\", phase=~\"Pending|Failed|Unknown\", pod=~\"$deployment-.*\"})",
+              "legendFormat": "not_running",
+              "refId": "A"
+            }
+          ],
+          "title": "Pods Not Running",
+          "type": "stat"
+        },
+        {
+          "datasource": { "uid": "${DS_PROMETHEUS}" },
+          "description": "CPU usage per pod (sum of containers) using cAdvisor metrics.",
+          "fieldConfig": {
+            "defaults": { "unit": "cores" },
+            "overrides": []
+          },
+          "gridPos": { "h": 9, "w": 12, "x": 0, "y": 5 },
+          "id": 5,
+          "options": {
+            "legend": { "displayMode": "list", "placement": "right" },
+            "tooltip": { "mode": "single" }
+          },
+          "targets": [
+            {
+              "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"$namespace\", pod=~\"$deployment-.*\", container!=\"\", image!=\"\"}[5m])) by (pod)",
+              "legendFormat": "{{pod}}",
+              "refId": "A"
+            }
+          ],
+          "title": "CPU Usage (cores) per Pod",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "uid": "${DS_PROMETHEUS}" },
+          "description": "Memory working set per pod (sum of containers).",
+          "fieldConfig": {
+            "defaults": { "unit": "bytes" },
+            "overrides": []
+          },
+          "gridPos": { "h": 9, "w": 12, "x": 12, "y": 5 },
+          "id": 6,
+          "options": {
+            "legend": { "displayMode": "list", "placement": "right" },
+            "tooltip": { "mode": "single" }
+          },
+          "targets": [
+            {
+              "expr": "sum(container_memory_working_set_bytes{namespace=\"$namespace\", pod=~\"$deployment-.*\", container!=\"\", image!=\"\"}) by (pod)",
+              "legendFormat": "{{pod}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Memory Working Set (bytes) per Pod",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "uid": "${DS_PROMETHEUS}" },
+          "description": "Restarts per pod over last 30 minutes. Great for proving stability.",
+          "fieldConfig": { "defaults": { "unit": "none" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+          "id": 7,
+          "options": { "legend": { "displayMode": "list", "placement": "right" } },
+          "targets": [
+            {
+              "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=\"$namespace\", pod=~\"$deployment-.*\"}[30m])) by (pod)",
+              "legendFormat": "{{pod}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Container Restarts (last 30m) per Pod",
+          "type": "timeseries"
+        },
+        {
+          "datasource": { "uid": "${DS_PROMETHEUS}" },
+          "description": "When each pod started (useful for rollouts).",
+          "fieldConfig": { "defaults": { "unit": "dateTimeAsIso" }, "overrides": [] },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+          "id": 8,
+          "options": {
+            "showHeader": true,
+            "sortBy": [{ "desc": true, "displayName": "Value" }]
+          },
+          "targets": [
+            {
+              "expr": "max(kube_pod_start_time{namespace=\"$namespace\", pod=~\"$deployment-.*\"}) by (pod)",
+              "legendFormat": "{{pod}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Pod Start Time (per Pod)",
+          "type": "table"
+        }
+      ],
+      "refresh": "10s",
+      "schemaVersion": 38,
+      "style": "dark",
+      "tags": ["myapp", "kubernetes", "gitops"],
+      "templating": {
+        "list": [
+          {
+            "current": { "selected": false, "text": "Prometheus", "value": "Prometheus" },
+            "hide": 0,
+            "includeAll": false,
+            "label": "Datasource",
+            "multi": false,
+            "name": "DS_PROMETHEUS",
+            "options": [],
+            "query": "prometheus",
+            "refresh": 1,
+            "type": "datasource"
+          },
+          {
+            "current": { "selected": false, "text": "myapp", "value": "myapp" },
+            "hide": 0,
+            "includeAll": false,
+            "label": "Namespace",
+            "multi": false,
+            "name": "namespace",
+            "options": [],
+            "query": "label_values(kube_namespace_labels, namespace)",
+            "refresh": 1,
+            "type": "query",
+            "datasource": { "uid": "${DS_PROMETHEUS}" }
+          },
+          {
+            "current": { "selected": false, "text": "dev-myapp", "value": "dev-myapp" },
+            "hide": 0,
+            "includeAll": false,
+            "label": "Deployment",
+            "multi": false,
+            "name": "deployment",
+            "options": [],
+            "query": "label_values(kube_deployment_status_replicas_available{namespace=\"$namespace\"}, deployment)",
+            "refresh": 1,
+            "type": "query",
+            "datasource": { "uid": "${DS_PROMETHEUS}" }
+          }
+        ]
+      },
+      "time": { "from": "now-6h", "to": "now" },
+      "timepicker": { "refresh_intervals": ["5s", "10s", "30s", "1m", "5m"], "time_options": ["5m", "15m", "1h", "6h", "12h", "24h"] },
+      "timezone": "browser",
+      "title": "MyApp - Kubernetes Overview",
+      "uid": "myapp-k8s-overview",
+      "version": 1,
+      "weekStart": ""
+    }
