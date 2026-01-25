@@ -15,4 +15,3 @@ kind: Kustomization
 
 # All resources below will be applied. (Dashboards are ConfigMaps.)
 resources:
-  - dashboards/myapp-dashboard-cm.yaml
