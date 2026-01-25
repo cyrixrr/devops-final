@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/cyrixrr/strapi
-  tag: "bf7f6e3"
+  tag: "00ef021b0d13673172a44a5ca7a4a53332d3e322"
   pullPolicy: IfNotPresent
 
 service:
