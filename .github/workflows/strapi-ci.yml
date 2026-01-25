@@ -2,7 +2,7 @@ name: Strapi CI (build -> push -> PR bump GitOps)
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
     paths:
       - "strapi/**"
       - ".github/workflows/strapi-ci.yml"
@@ -20,16 +20,19 @@ concurrency:
 jobs:
   build_scan_push_and_pr:
     runs-on: ubuntu-latest
-    # avoid running again on the PR-commit that only changes GitOps (and is made by the bot)
+
+    # Avoid running again on the PR-commit that only changes GitOps (and is made by the bot)
     if: github.actor != 'github-actions[bot]'
 
     env:
       IMAGE: ghcr.io/${{ github.repository_owner }}/strapi
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: "20"
 
@@ -41,7 +44,8 @@ jobs:
         working-directory: strapi
         run: npm run build
 
-      - uses: docker/setup-buildx-action@v3
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -73,14 +77,20 @@ jobs:
           ignore-unfixed: true
           exit-code: "0"
 
+      # Defensive cleanup: avoid committing any trivy artifacts (some actions may write to workspace)
+      - name: Cleanup workspace (avoid committing trivy artifacts)
+        run: |
+          rm -rf trivy .trivy || true
+
       - name: Bump Helm values.yaml image.tag to SHA
+        env:
+          FILE: gitops/apps/strapi/chart/values.yaml
+          SHA: ${{ steps.tag.outputs.t }}
         run: |
           set -euo pipefail
-          FILE="gitops/apps/strapi/chart/values.yaml"
-          SHA="${{ steps.tag.outputs.t }}"
-
           python3 - <<'PY'
           import os
+
           path = os.environ["FILE"]
           sha  = os.environ["SHA"]
 
@@ -111,9 +121,6 @@ jobs:
 
           open(path, "w", encoding="utf-8").write("".join(out))
           PY
-        env:
-          FILE: gitops/apps/strapi/chart/values.yaml
-          SHA: ${{ steps.tag.outputs.t }}
 
       - name: Create PR for GitOps bump
         uses: peter-evans/create-pull-request@v6
@@ -122,6 +129,11 @@ jobs:
           branch: ci/strapi-bump-${{ steps.tag.outputs.t }}
           delete-branch: true
           base: main
+
+          # IMPORTANT: only commit the GitOps file; prevents accidentally committing trivy/ or other artifacts
+          add-paths: |
+            gitops/apps/strapi/chart/values.yaml
+
           commit-message: "chore(strapi): bump image tag to ${{ steps.tag.outputs.t }}"
           title: "chore(strapi): bump image tag to ${{ steps.tag.outputs.t }}"
           body: |
