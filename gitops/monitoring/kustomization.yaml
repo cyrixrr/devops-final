@@ -1,17 +1,6 @@
-# ------------------------------------------------------------------------------
-# GitOps: monitoring extras (non-Helm manifests)
-#
-# kube-prometheus-stack is installed via Helm (monitoring-kps ArgoCD app).
-# This folder is for "extras" that are NOT part of the Helm chart:
-# - custom dashboards
-# - custom ServiceMonitors / PrometheusRules for our apps
-# - additional scrape configs, etc.
-#
-# ArgoCD will apply this via a separate Application (monitoring-extras).
-# ------------------------------------------------------------------------------
-
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-# All resources below will be applied. (Dashboards are ConfigMaps.)
 resources:
+  - placeholders/keep.yaml
+  - dashboards/strapi-dashboard-cm.yaml

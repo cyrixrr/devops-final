@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: monitoring-extras-keep
+  namespace: monitoring
+data:
+  keep: "true"

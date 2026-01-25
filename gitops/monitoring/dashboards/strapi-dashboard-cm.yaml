@@ -1,0 +1,81 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: strapi-grafana-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  strapi-k8s-dashboard.json: |
+    {
+      "uid": "strapi-k8s",
+      "title": "Strapi - Kubernetes Overview",
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "10s",
+      "tags": ["strapi", "kubernetes"],
+      "templating": {
+        "list": [
+          { "name": "ds", "type": "datasource", "query": "prometheus",
+            "current": { "text": "Prometheus", "value": "Prometheus" } },
+          { "name": "namespace", "type": "constant", "label": "Namespace",
+            "query": "strapi", "current": { "text": "strapi", "value": "strapi" } },
+          { "name": "pod", "type": "query", "label": "Pod",
+            "datasource": { "type": "prometheus", "uid": "${ds}" },
+            "query": "label_values(kube_pod_info{namespace=\"$namespace\", pod=~\"strapi-.*\"}, pod)",
+            "refresh": 1, "includeAll": true, "multi": true,
+            "current": { "text": "All", "value": ["$__all"] } }
+        ]
+      },
+      "panels": [
+        {
+          "type": "timeseries",
+          "title": "CPU (cores) - Strapi pods",
+          "datasource": { "type": "prometheus", "uid": "${ds}" },
+          "targets": [
+            { "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"$namespace\", pod=~\"$pod\", container!=\"\", container!=\"POD\"}[5m]))",
+              "legendFormat": "{{pod}}" }
+          ],
+          "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 }
+        },
+        {
+          "type": "timeseries",
+          "title": "Memory (MiB) - Strapi pods",
+          "datasource": { "type": "prometheus", "uid": "${ds}" },
+          "targets": [
+            { "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"$namespace\", pod=~\"$pod\", container!=\"\", container!=\"POD\"}) / 1024 / 1024",
+              "legendFormat": "{{pod}}" }
+          ],
+          "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 }
+        },
+        {
+          "type": "timeseries",
+          "title": "Restarts - Strapi containers",
+          "datasource": { "type": "prometheus", "uid": "${ds}" },
+          "targets": [
+            { "expr": "sum by (pod) (kube_pod_container_status_restarts_total{namespace=\"$namespace\", pod=~\"$pod\"})",
+              "legendFormat": "{{pod}}" }
+          ],
+          "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 }
+        },
+        {
+          "type": "stat",
+          "title": "Deployment replicas available",
+          "datasource": { "type": "prometheus", "uid": "${ds}" },
+          "targets": [
+            { "expr": "kube_deployment_status_replicas_available{namespace=\"$namespace\", deployment=\"strapi\"}" }
+          ],
+          "gridPos": { "x": 12, "y": 8, "w": 6, "h": 8 }
+        },
+        {
+          "type": "stat",
+          "title": "Pods ready",
+          "datasource": { "type": "prometheus", "uid": "${ds}" },
+          "targets": [
+            { "expr": "sum(kube_pod_container_status_ready{namespace=\"$namespace\", pod=~\"strapi-.*\", container=\"strapi\"} == 1)" }
+          ],
+          "gridPos": { "x": 18, "y": 8, "w": 6, "h": 8 }
+        }
+      ]
+    }
