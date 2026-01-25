@@ -1,6 +1,3 @@
-cd ~/git/devops-final
-
-cat > gitops/apps/strapi/chart/templates/deployment.yaml <<'EOF'
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -73,4 +70,3 @@ spec:
         - name: uploads
           persistentVolumeClaim:
             claimName: strapi-uploads
-EOF
