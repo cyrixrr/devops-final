@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: myapp
-          image: ghcr.io/cyrixrr/myapp:81790fe09192a5d287cd49f054831a269388db67
+          image: ghcr.io/cyrixrr/myapp:aa5bf67454a38aeee9bc2a2e71f41f40d716eb3f
           ports:
             - containerPort: 8000
           env:
