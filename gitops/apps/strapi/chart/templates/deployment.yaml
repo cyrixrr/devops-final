@@ -1,8 +1,12 @@
+cd ~/git/devops-final
+
 cat > gitops/apps/strapi/chart/templates/deployment.yaml <<'EOF'
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: strapi
+  labels:
+    app: strapi
 spec:
   replicas: 1
   selector:
@@ -18,7 +22,8 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
-            - containerPort: {{ .Values.service.port }}
+            - name: http
+              containerPort: {{ .Values.service.port }}
           env:
             - name: NODE_ENV
               value: "production"
