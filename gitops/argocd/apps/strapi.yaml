@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: strapi
+  namespace: argocd
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/cyrixrr/devops-final.git
+    targetRevision: main
+    path: gitops/apps/strapi/chart
+    helm:
+      releaseName: strapi
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: strapi
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
