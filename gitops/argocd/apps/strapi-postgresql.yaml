@@ -1,0 +1,31 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: strapi-postgresql
+  namespace: argocd
+spec:
+  project: default
+
+  sources:
+    - repoURL: https://charts.bitnami.com/bitnami
+      chart: postgresql
+      targetRevision: "18.*"
+      helm:
+        releaseName: strapi-postgresql
+        valueFiles:
+          - $values/gitops/helm/postgresql/strapi-values.yaml
+
+    - repoURL: https://github.com/cyrixrr/devops-final.git
+      targetRevision: main
+      ref: values
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: strapi
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

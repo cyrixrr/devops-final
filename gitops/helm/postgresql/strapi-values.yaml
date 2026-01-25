@@ -1,0 +1,14 @@
+auth:
+  username: strapi
+  database: strapi
+
+  existingSecret: strapi-postgres-credentials
+  secretKeys:
+    adminPasswordKey: postgres-password
+    userPasswordKey: password
+
+primary:
+  persistence:
+    enabled: true
+    storageClass: nfs-client
+    size: 20Gi
