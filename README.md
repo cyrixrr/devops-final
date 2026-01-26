@@ -1,121 +1,151 @@
-# DevOps Final Project (Mini Lab)
+# DevOps Final Project — Home Lab GitOps Platform (Strapi + Postgres)
 
-This repository is a mini DevOps platform + delivery pipeline built as a home lab.
+This repository demonstrates a complete **CI + CD GitOps** delivery loop in a **home lab** environment.
 
-Goal: fully automated software delivery starting from Git, using CI, CD (GitOps), Kubernetes, Vault, observability, and security gates, with infrastructure/bootstrap automated via Ansible.
+**What’s running in the lab right now:**
+- **k3s Kubernetes (3 nodes)**
+- **Argo CD** (GitOps deployments)
+- **Strapi** (application) + **PostgreSQL** (database)
+- **Prometheus + Grafana** (observability)
+- **NFS dynamic provisioning** (PVCs via external provisioner)
+- **Pi-hole DNS + Nginx Proxy Manager (NPM)** on a local **Proxmox** server for friendly hostnames + reverse proxy
+- **Traefik** is used **only** as the k3s ServiceLB/LoadBalancer (no Ingress usage in this project)
 
-## What you will see in the demo (end-to-end flow)
+---
 
-1. Developer pushes code to GitHub (feature branch)
-2. Open Pull Request (PR)
-3. PR CI pipeline runs quality + security gates:
-   - Secret scan (gitleaks)
-   - Lint + unit tests
-   - SAST (semgrep)
-   - Vulnerability scanning (trivy)
-4. Merge to `main` triggers release pipeline:
-   - Build Docker image (immutable artifact)
-   - Scan image
-   - Push image to **GitHub Container Registry (GHCR)**
-   - Update GitOps overlay with new image tag and commit to Git
-5. Argo CD detects GitOps change and deploys to Kubernetes (k3s)
-6. Application pulls runtime secrets from Vault (no secrets stored in Git)
-7. Database credentials are issued dynamically by Vault (TTL-based)
-8. Prometheus/Grafana show metrics to prove health and traffic
+## The “money shot” demo (real GitOps CD)
 
-## Architecture (High-Level)
+**Goal:** *No manual `kubectl apply` / no “deploy from CI”*.  
+The **source of truth is Git**.
 
-### Runtime platform
-- **k3s Kubernetes cluster (3 nodes)**
-- **Argo CD** for GitOps deployments
-- **HashiCorp Vault** for secrets (KV + dynamic DB creds)
-- **Prometheus + Grafana** for observability
-- **GitHub Container Registry (GHCR)** for images
-- **Postgres** for DB + migrations
+### End-to-end flow
+1. **Change Strapi code** (in `strapi/`) and push to `main`
+2. **GitHub Actions CI**:
+   - builds Strapi
+   - builds & pushes a container image to **GHCR**
+   - uses **immutable image tag = commit SHA**
+   - opens a **PR** that updates GitOps desired state in:
+     - `gitops/apps/strapi/chart/values.yaml` → `image.tag: "<sha>"`
+3. **Merge the PR**
+4. **Argo CD auto-sync** detects Git change and rolls out Strapi in k3s
+5. Verify rollout:
+   - `kubectl -n strapi get pods`
+   - `kubectl -n strapi describe pod <pod>` shows new image tag
+6. Observability proof:
+   - Grafana dashboard (CPU/Mem/Restarts/Replicas/Ready Pods)
 
-### CI/CD
-- **GitHub Actions** (GitHub-hosted runners)
-- Pipelines live in `.github/workflows/`
+---
 
-### Lab topology (hardware mapping)
+## Access model (Pi-hole + NPM)
 
-#### Control workstation
-- **Main PC (Control workstation)**: i9-14900K / 48GB RAM / 2TB NVMe  
-  Used only for control: VS Code, kubectl, helm, ansible, browser dashboards (no workloads)
+I don’t use Kubernetes Ingress for this project. Instead:
 
-#### Kubernetes nodes (reserved IPs)
-- **dell-optiplex-1** (Dell OptiPlex 3070) — **192.168.0.100**  
-  Role: **k3s server (control-plane)**
+- **Pi-hole** provides internal DNS records (`*.apps.home.arpa`)
+- **Nginx Proxy Manager (NPM)** runs on a local **Proxmox** server and reverse-proxies to k3s NodePorts
+- Example hostnames:
+  - `http://strapi.apps.home.arpa/admin`  → Strapi NodePort service
+  - `https://argocd.apps.home.arpa` (optional) → Argo CD NodePort service
 
-- **hp-prodesk-1** (HP ProDesk 600 G4) — **192.168.0.101**  
-  Role: **k3s agent node**  
-  Storage: i5-8500 / 16GB RAM / 2×512GB NVMe (Ubuntu installed on one 512GB; second kept free for future `/data`)
+**Traefik** is the default k3s ServiceLB and exposes cluster services via:
+- `192.168.0.100`, `192.168.0.101`, `192.168.0.102`
 
-- **hp-prodesk-2** (HP ProDesk 600 G4) — **192.168.0.102**  
-  Role: **k3s agent node**  
-  Storage: i5-8500 / 16GB RAM / 2×512GB NVMe (Ubuntu installed on one 512GB; second kept free for future `/data`)
+Traefik is not used for HTTP ingress routing here (NPM handles that externally).
 
-#### Shared storage
-- **NAS (Zyxel 326)**: NFS storage for Kubernetes PVs (Vault/Postgres/monitoring)
+---
 
-## Value Stream Map (VSM)
+## Architecture (high-level)
 
-Value delivered: from code change to safely running in Kubernetes with evidence (metrics).
+### Runtime components
+- **k3s cluster** (1 server + 2 agents)
+- **Argo CD**:
+  - root app + app-of-apps structure under `gitops/argocd/`
+- **Strapi app** deployed via **Helm chart in Git**
+  - chart & values live under `gitops/apps/strapi/chart/`
+- **PostgreSQL** deployed via Helm values under `gitops/helm/postgresql/`
+- **Observability**
+  - kube-prometheus-stack values under `gitops/helm/kube-prometheus-stack/`
+  - Grafana dashboard for Strapi is delivered as a **ConfigMap** with label `grafana_dashboard=1`
 
-Stages:
-1) Code + PR → reviewable change  
-2) CI Security & Quality → green gates  
-3) Build & Package → immutable container image  
-4) Publish → image pushed to **GHCR**  
-5) GitOps Update → desired state stored in Git  
-6) Deploy → Argo CD syncs to k3s  
-7) Verify + Observe → smoke test + Grafana evidence  
+### Storage
+- Dynamic PV provisioning using `nfs-subdir-external-provisioner`
+- Strapi PVCs:
+  - `strapi-uploads`
+- PostgreSQL PVC:
+  - `data-strapi-postgresql-0`
 
-Target lead times (demo):
-- PR checks: < 2 minutes
-- Main pipeline to deployed: < 3 minutes
+---
 
-## Repository layout
+## Lab topology
 
-- `app/` — application source code + Dockerfile + tests
-- `db/` — database migrations
-- `gitops/` — Kubernetes manifests (GitOps source of truth)
-- `platform/ansible/` — Ansible inventory/playbooks/roles for lab bootstrap
-- `.github/workflows/` — GitHub Actions pipelines (PR + main)
-- `docs/` — detailed documentation (HLD/LLD/VSM/runbook/demo/deep dive)
+### Kubernetes nodes (reserved IPs)
+- **dell-optiplex-1** — `192.168.0.100` — **k3s server (control-plane)**
+- **hp-prodesk-1** — `192.168.0.101` — **k3s agent**
+- **hp-prodesk-2** — `192.168.0.102` — **k3s agent**
 
-## Demo script (12–15 minutes)
+### Control workstation
+Used only for administration (VS Code, kubectl, helm, ansible, browser dashboards).
 
-Tabs to open:
-- GitHub PR
+### DNS / Reverse proxy
+- **Pi-hole** (DNS)
+- **Nginx Proxy Manager (NPM)** on **Proxmox** (reverse proxy to NodePorts)
+
+---
+
+## Repository layout (current)
+
+- `strapi/` — Strapi application source + Dockerfile
+- `.github/workflows/` — CI pipelines (build/push + PR bump GitOps)
+- `gitops/` — GitOps source of truth
+  - `gitops/argocd/` — ArgoCD applications (root + apps)
+  - `gitops/apps/strapi/chart/` — Strapi Helm chart + `values.yaml` (image.tag is updated via PR)
+  - `gitops/helm/` — Helm values for platform components (postgresql, kube-prometheus-stack)
+  - `gitops/monitoring/` — Kustomize app for Grafana dashboards (ConfigMaps)
+- `platform/ansible/` — Ansible inventory + playbooks for provisioning the 3 nodes
+- `platform/helm/` — values used to install ArgoCD (bootstrap)
+- `docs/` — exam documentation:
+  - `docs/HLD.md`
+  - `docs/LLD.md`
+  - `docs/VSM.md`
+  - `docs/RUNBOOK.md`
+  - `docs/DEMO_SCRIPT.md`
+
+---
+
+## Demo checklist (12–15 minutes)
+
+Open these tabs:
+- GitHub repo (PR list)
 - GitHub Actions run
-- Argo CD app page
-- App `/version`
+- Argo CD UI (applications page)
+- Strapi admin URL
 - Grafana dashboard
 
-Order:
-1) High-level design (1–2 min)
-2) Repo layout (1 min)
-3) PR: show CI gates (3–4 min)
-4) Merge: build/push + GitOps update (3–4 min)
-5) ArgoCD sync + rollout (1–2 min)
-6) Validate `/version` (1 min)
-7) Deep dive: Vault (k8s auth + dynamic DB creds TTL) (2–3 min)
-8) Future improvements (30–60 sec)
+Suggested order:
+1. **HLD**: components + why GitOps (1–2 min)
+2. **LLD**: repo layout + where desired state lives (1–2 min)
+3. **CI**: show action builds/pushes image + opens PR bump (2–3 min)
+4. **Money shot**:
+   - open PR “bump Strapi image tag to `<sha>`”
+   - confirm it changes only `gitops/apps/strapi/chart/values.yaml`
+   - merge PR
+5. **ArgoCD** auto-sync + rollout (1–2 min)
+6. **kubectl proof**: pod image tag is new SHA (1 min)
+7. **Grafana proof**: Strapi dashboard (1–2 min)
+8. **Future improvements** (30–60 sec)
 
-## Deep dive (planned): Vault
-- Kubernetes auth method (ServiceAccount → Vault role)
-- Vault policies (least privilege)
-- Secret injection into pods
-- Dynamic DB credentials with TTL (database secrets engine)
-- Audit logs (optional)
+---
 
-## Docs
+## Notes / Future improvements (easy to discuss in Q&A)
 
-More detailed docs live in `docs/`:
-- `docs/HLD.md`
-- `docs/LLD.md`
-- `docs/VSM.md`
-- `docs/RUNBOOK.md`
-- `docs/DEMO_SCRIPT.md`
-- `docs/DEEP_DIVE_VAULT.md`
+- Add **Strapi app-level metrics** (`/metrics`) + ServiceMonitor (real RPS/latency/error rate)
+- Add **SAST/secret scanning** gates for the Strapi repo path
+- Add **image signing** (cosign) + policy enforcement
+- Add **Vault** for dynamic secrets (optional deep dive topic)
+
+---
+
+## Quick commands
+
+### Show apps (ArgoCD)
+```bash
+kubectl -n argocd get applications
