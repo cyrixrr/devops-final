@@ -74,7 +74,7 @@ jobs:
           image-ref: ${{ env.IMAGE }}:${{ steps.tag.outputs.t }}
           format: table
           severity: HIGH,CRITICAL
-          ignore-unfixed: true
+          ignore-unfixed: false
           exit-code: "0"
 
       # Defensive cleanup: avoid committing any trivy artifacts (some actions may write to workspace)
