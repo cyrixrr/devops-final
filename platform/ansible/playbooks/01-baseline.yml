@@ -1,69 +1,71 @@
-- name: Baseline setup for all lab nodes
+---
+- name: Baseline Linux configuration for k3s nodes
   hosts: k3s
   become: true
-  tasks:
-    - name: Update apt cache
-      ansible.builtin.apt:
-        update_cache: yes
-        cache_valid_time: 3600
+  gather_facts: true
 
-    - name: Install baseline packages
+  vars:
+    k3s_required_modules:
+      - overlay
+      - br_netfilter
+
+    k3s_sysctl:
+      net.bridge.bridge-nf-call-iptables: 1
+      net.bridge.bridge-nf-call-ip6tables: 1
+      net.ipv4.ip_forward: 1
+
+  tasks:
+    - name: Install baseline packages (Debian/Ubuntu)
       ansible.builtin.apt:
         name:
           - curl
-          - wget
           - ca-certificates
-          - gnupg
-          - jq
-          - htop
-          - vim
-          - git
+          - iptables
+          - iptables-persistent
           - nfs-common
-          - net-tools
-          - unzip
-          - chrony
-          - ruff
         state: present
+        update_cache: true
+      when: ansible_facts.os_family == "Debian"
 
-    - name: Ensure chrony is enabled and running
-      ansible.builtin.service:
-        name: chrony
-        enabled: true
-        state: started
+    - name: Disable swap now (remove swap mounts)
+      ansible.builtin.mount:
+        name: none
+        fstype: swap
+        state: absent
 
-    - name: Disable swap immediately (k8s requirement)
-      ansible.builtin.command: swapoff -a
-      changed_when: false
-
-    - name: Comment out swap in /etc/fstab (k8s requirement)
+    - name: Comment swap entries in /etc/fstab (persist)
       ansible.builtin.replace:
         path: /etc/fstab
-        regexp: '^\s*([^#\n]+\s+[^#\n]+\s+swap\s+[^#\n]+.*)$'
+        regexp: '^(?!#)(.*\s+swap\s+.*)$'
         replace: '# \1'
 
-    - name: Load kernel modules needed by Kubernetes
+    - name: Ensure required kernel modules are loaded now
+      community.general.modprobe:
+        name: "{{ item }}"
+        state: present
+      loop: "{{ k3s_required_modules }}"
+
+    - name: Persist required kernel modules on boot
       ansible.builtin.copy:
-        dest: /etc/modules-load.d/k8s.conf
+        dest: /etc/modules-load.d/k3s.conf
+        mode: "0644"
         content: |
           overlay
           br_netfilter
 
-    - name: Ensure modules are loaded now
-      ansible.builtin.shell: |
-        modprobe overlay
-        modprobe br_netfilter
-      args:
-        executable: /bin/bash
-      changed_when: false
-
-    - name: Set sysctl params for Kubernetes networking
+    - name: Persist sysctl for Kubernetes networking
       ansible.builtin.copy:
-        dest: /etc/sysctl.d/99-kubernetes-cri.conf
+        dest: /etc/sysctl.d/99-k3s.conf
+        mode: "0644"
         content: |
-          net.bridge.bridge-nf-call-iptables  = 1
+          net.bridge.bridge-nf-call-iptables = 1
           net.bridge.bridge-nf-call-ip6tables = 1
-          net.ipv4.ip_forward                 = 1
+          net.ipv4.ip_forward = 1
 
-    - name: Apply sysctl params
-      ansible.builtin.command: sysctl --system
-      changed_when: false
+    - name: Apply sysctl settings (no sysctl --system)
+      ansible.posix.sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value }}"
+        state: present
+        reload: true
+      loop: "{{ k3s_sysctl | dict2items }}"
