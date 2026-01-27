@@ -1,43 +1,37 @@
-# ------------------------------------------------------------------------------
-# Strapi CI (build -> push -> PR bump GitOps)
-#
-# Purpose:
-# 1) Build Strapi (admin UI) to verify the code compiles
-# 2) Build Docker image and push it to GHCR with an immutable tag = commit SHA
-# 3) Scan image with Trivy (security visibility)
-# 4) Update GitOps source-of-truth (Helm values) by opening a PR that bumps image.tag
-#    for BOTH prod and dev, so ArgoCD deploys automatically after merge.
-#
-# Repo layout assumptions (your current setup):
-# - App code:                     strapi/
-# - Prod Helm values:             gitops/apps/strapi/chart/values.yaml
-# - Dev  Helm values:             gitops/apps/strapi-dev/chart/values.yaml   (if exists)
-# - Docker registry:              GHCR (ghcr.io)
-# ------------------------------------------------------------------------------
+# ============================================================
+# Strapi CI (GitOps loop)
+# - Build Strapi
+# - Build & push immutable image (tag = full commit SHA) to GHCR
+# - Trivy scan (HIGH/CRITICAL, non-blocking for demo)
+# - Create a PR that bumps GitOps values for BOTH prod + dev:
+#     - gitops/apps/strapi/chart/values-prod.yaml
+#     - gitops/apps/strapi/chart/values-dev.yaml
+# Merge PR -> ArgoCD auto-sync -> Kubernetes rollout
+# ============================================================
 
-name: Strapi CI (build -> push -> PR bump GitOps)
+name: Strapi CI (build -> push -> PR bump GitOps prod+dev)
 
 on:
-  # Trigger automatically on pushes to main, but only if app code or the workflow changes.
+  # Run on every push to main, but only if Strapi or this workflow changed
   push:
     branches: ["main"]
     paths:
       - "strapi/**"
       - ".github/workflows/strapi-ci.yml"
 
-  # Allow manual runs from GitHub UI (useful for demos/exams).
+  # Allow manual run from GitHub UI (Actions tab)
   workflow_dispatch: {}
 
-# Required permissions for this workflow:
-# - contents: write      -> create commits/branches for PR
-# - pull-requests: write -> open/update PRs
-# - packages: write      -> push Docker image to GHCR
+# These permissions are required because the workflow:
+# - pushes Docker images to GHCR (packages: write)
+# - creates commits/branches and opens PRs (contents: write, pull-requests: write)
 permissions:
   contents: write
   pull-requests: write
   packages: write
 
-# Prevent multiple runs for the same branch from overlapping (keeps GHCR/PRs clean).
+# Prevent multiple runs fighting each other (e.g., pushing twice quickly).
+# If a newer run starts, the older one is cancelled.
 concurrency:
   group: strapi-ci-${{ github.ref }}
   cancel-in-progress: true
@@ -46,45 +40,51 @@ jobs:
   build_scan_push_and_pr:
     runs-on: ubuntu-latest
 
-    # Avoid loops: if the workflow creates a PR/commit using github-actions[bot],
-    # we don't want that bot activity to retrigger the whole workflow again.
+    # IMPORTANT:
+    # We do NOT want the workflow to re-run because of the bot PR commit.
+    # Otherwise you get a loop: workflow bumps GitOps -> PR commit triggers workflow -> ...
     if: github.actor != 'github-actions[bot]'
 
-    # Workflow-wide variables used in multiple steps.
+    # Shared variables used across steps
     env:
-      # Image name in GHCR. Example: ghcr.io/cyrixrr/strapi
+      # Target image registry/repo (GHCR)
       IMAGE: ghcr.io/${{ github.repository_owner }}/strapi
 
-      # GitOps files to bump (prod + dev). Dev file can be missing; script will skip it.
-      PROD_FILE: gitops/apps/strapi/chart/values.yaml
-      DEV_FILE:  gitops/apps/strapi-dev/chart/values.yaml
+      # GitOps files to bump (your repo structure)
+      # NOTE: You said you have values-prod.yaml and values-dev.yaml here:
+      PROD_FILE: gitops/apps/strapi/chart/values-prod.yaml
+      DEV_FILE:  gitops/apps/strapi/chart/values-dev.yaml
 
     steps:
-      # --- 1) Checkout repository (needed for build + editing GitOps files) ---
+      # -------------------------
+      # 1) Checkout repository
+      # -------------------------
       - name: Checkout
         uses: actions/checkout@v4
 
-      # --- 2) Setup Node for running npm ci / npm run build ---
+      # -------------------------
+      # 2) Node setup + build (fast failure before Docker build)
+      # This proves: dependencies install + admin UI builds cleanly.
+      # -------------------------
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "20"
 
-      # --- 3) Install deps (uses package-lock.json for reproducibility) ---
-      - name: Install deps
+      - name: Install deps (strapi/)
         working-directory: strapi
         run: npm ci
 
-      # --- 4) Build Strapi admin UI (fast validation step) ---
-      - name: Build Strapi admin
+      - name: Build Strapi admin (strapi/)
         working-directory: strapi
         run: npm run build
 
-      # --- 5) Enable modern Docker build engine (buildx) ---
+      # -------------------------
+      # 3) Docker setup + login
+      # -------------------------
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # --- 6) Authenticate to GHCR using GitHub token ---
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
@@ -92,14 +92,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # --- 7) Compute immutable tag = full commit SHA ---
-      # This makes the deployment "immutable": every deploy points to a unique image.
-      - name: Compute tag (commit SHA)
+      # -------------------------
+      # 4) Compute immutable tag = FULL commit SHA
+      # This is ideal GitOps: every deployment points to an exact immutable artifact.
+      # -------------------------
+      - name: Compute tag (full commit SHA)
         id: tag
         run: echo "t=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
 
-      # --- 8) Build and push image (ONLY immutable tag; no :latest) ---
-      - name: Build and push (immutable tag only)
+      # -------------------------
+      # 5) Build & push image (only SHA tag, no :latest)
+      # This keeps deployments deterministic and avoids "latest drift".
+      # -------------------------
+      - name: Build and push image (immutable SHA tag)
         uses: docker/build-push-action@v6
         with:
           context: ./strapi
@@ -108,10 +113,12 @@ jobs:
           tags: |
             ${{ env.IMAGE }}:${{ steps.tag.outputs.t }}
 
-      # --- 9) Security scan the pushed image ---
-      # exit-code: "0" => do not fail the build (exam-friendly),
-      # but still prints findings (HIGH/CRITICAL).
-      - name: Trivy scan (HIGH/CRITICAL)
+      # -------------------------
+      # 6) Security scan (Trivy)
+      # For exam demo we keep it NON-BLOCKING (exit-code: 0),
+      # but still show HIGH/CRITICAL results in logs.
+      # -------------------------
+      - name: Trivy scan (HIGH/CRITICAL, non-blocking)
         uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: ${{ env.IMAGE }}:${{ steps.tag.outputs.t }}
@@ -120,46 +127,44 @@ jobs:
           ignore-unfixed: true
           exit-code: "0"
 
-      # --- 10) Cleanup local artifacts (prevents accidental git add) ---
-      # Some actions create folders in the workspace; we never want those committed.
-      - name: Cleanup scan artifacts (safety)
-        run: |
-          rm -rf trivy || true
-
-      # --- 11) Update GitOps values.yaml for prod + dev ---
-      # This is the "real GitOps" part:
-      # CI does NOT apply kubectl. It only updates Git (source of truth).
-      - name: Bump Helm values.yaml image.tag to SHA (prod + dev)
-        env:
-          # The tag we want to write into Helm values
-          SHA: ${{ steps.tag.outputs.t }}
-
-          # Paths to prod + dev files
-          PROD_FILE: ${{ env.PROD_FILE }}
-          DEV_FILE: ${{ env.DEV_FILE }}
+      # -------------------------
+      # 7) GitOps bump (prod + dev)
+      # This edits BOTH values files and updates:
+      #   image:
+      #     tag: "<sha>"
+      #
+      # NOTE:
+      # We pass FILE and SHA correctly into Python:
+      #   FILE="$FILE" SHA="$SHA" python3 ...
+      # This avoids your previous KeyError: 'FILE'.
+      # -------------------------
+      - name: Bump GitOps values (prod + dev) to new SHA tag
+        shell: bash
         run: |
           set -euo pipefail
 
-          bump_file () {
-            local file="$1"
+          SHA="${{ steps.tag.outputs.t }}"
+          echo "New image tag: $SHA"
 
-            # Dev file might not exist yet; skipping keeps this workflow flexible.
-            if [ ! -f "$file" ]; then
-              echo "ℹ️ Skipping missing file: $file"
-              return 0
+          bump_file () {
+            local FILE="$1"
+
+            # Hard fail if file is missing (keeps the workflow honest)
+            if [ ! -f "$FILE" ]; then
+              echo "❌ Missing file: $FILE"
+              exit 1
             fi
 
-            echo "Updating $file -> tag: $SHA"
+            echo "Updating $FILE -> image.tag: $SHA"
 
-            # Export FILE and SHA for the python process
-            FILE="$file" SHA="$SHA" python3 - <<'PY'
+            # IMPORTANT:
+            # Export vars for this python process only (FILE + SHA)
+            FILE="$FILE" SHA="$SHA" python3 - <<'PY'
           import os
 
           path = os.environ["FILE"]
           sha  = os.environ["SHA"]
 
-          # Read YAML as plain text and replace image.tag inside the "image:" block.
-          # (We keep it simple and stable for exam purposes.)
           lines = open(path, "r", encoding="utf-8").read().splitlines(True)
 
           out = []
@@ -168,20 +173,20 @@ jobs:
           replaced = False
 
           for line in lines:
-              # enter image: block
+              # Enter image: block
               if not in_image and line.lstrip().startswith("image:"):
                   in_image = True
                   image_indent = len(line) - len(line.lstrip())
                   out.append(line)
                   continue
 
-              # detect leaving image: block when indentation goes back
+              # Exit image block when we reach next top-level key
               if in_image:
                   cur_indent = len(line) - len(line.lstrip())
                   if line.strip() and cur_indent <= image_indent and not line.lstrip().startswith(("#", "-")):
                       in_image = False
 
-              # replace tag: within image: block
+              # Replace tag inside image block
               if in_image and line.lstrip().startswith("tag:"):
                   indent = line[:len(line) - len(line.lstrip())]
                   out.append(f'{indent}tag: "{sha}"\n')
@@ -199,20 +204,29 @@ jobs:
           bump_file "${PROD_FILE}"
           bump_file "${DEV_FILE}"
 
-      # --- 12) Create a PR with the GitOps changes ---
-      # You then "merge PR" during demo -> ArgoCD detects Git change -> rollout happens.
-      - name: Create PR for GitOps bump (prod + dev)
+      # -------------------------
+      # 8) Create PR for GitOps bump
+      # We explicitly limit PR content via add-paths to ONLY the two values files.
+      # That keeps PR clean and avoids accidentally committing anything else.
+      #
+      # NOTE:
+      # For this to work, repo settings must allow:
+      # - Workflow permissions: Read and write
+      # - Allow GitHub Actions to create and approve pull requests
+      # -------------------------
+      - name: Create PR for GitOps bump
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-          # Branch name includes SHA so each build gets a unique PR branch
+          # Unique branch name per commit SHA
           branch: ci/strapi-bump-${{ steps.tag.outputs.t }}
 
-          # Delete PR branch automatically after merge/close (keeps repo tidy)
+          # Auto-delete after merge to keep repo clean
           delete-branch: true
-
           base: main
+
+          # Commit + PR metadata
           commit-message: "chore(strapi): bump image tag to ${{ steps.tag.outputs.t }}"
           title: "chore(strapi): bump image tag to ${{ steps.tag.outputs.t }}"
           body: |
@@ -220,12 +234,12 @@ jobs:
 
             - Image: `${{ env.IMAGE }}:${{ steps.tag.outputs.t }}`
             - Files:
-              - `${{ env.PROD_FILE }}`
-              - `${{ env.DEV_FILE }}`
+              - `gitops/apps/strapi/chart/values-prod.yaml`
+              - `gitops/apps/strapi/chart/values-dev.yaml`
 
             Merge -> ArgoCD auto-sync -> rollout.
 
-          # Ensure ONLY these files are included in the PR commit
+          # SUPER IMPORTANT: only include these files in the PR commit
           add-paths: |
-            ${{ env.PROD_FILE }}
-            ${{ env.DEV_FILE }}
+            gitops/apps/strapi/chart/values-prod.yaml
+            gitops/apps/strapi/chart/values-dev.yaml
