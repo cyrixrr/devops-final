@@ -3,6 +3,8 @@ image:
   tag: "7e0dcdd7998c3d4508714b4f30cb842caacd1505"
   pullPolicy: IfNotPresent
 
+replicaCount: 3 
+
 service:
   type: NodePort
   port: 1337

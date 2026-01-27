@@ -5,7 +5,8 @@ metadata:
   labels:
     app: strapi
 spec:
-  replicas: 1
+  replicas: {{ .Values.replicaCount | default 1 }}
+  revisionHistoryLimit: 3
   selector:
     matchLabels:
       app: strapi
