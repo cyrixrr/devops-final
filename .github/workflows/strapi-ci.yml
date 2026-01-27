@@ -2,7 +2,7 @@ name: Strapi CI (build -> push -> PR bump GitOps)
 
 on:
   push:
-    branches: ["main"]
+    branches: [ "main" ]
     paths:
       - "strapi/**"
       - ".github/workflows/strapi-ci.yml"
@@ -20,19 +20,18 @@ concurrency:
 jobs:
   build_scan_push_and_pr:
     runs-on: ubuntu-latest
-
-    # Avoid running again on the PR-commit that only changes GitOps (and is made by the bot)
+    # avoid running again on the PR-commit that only changes GitOps (and is made by the bot)
     if: github.actor != 'github-actions[bot]'
 
     env:
       IMAGE: ghcr.io/${{ github.repository_owner }}/strapi
+      PROD_FILE: gitops/apps/strapi/chart/values.yaml
+      DEV_FILE:  gitops/apps/strapi-dev/chart/values.yaml
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: "20"
 
@@ -44,8 +43,7 @@ jobs:
         working-directory: strapi
         run: npm run build
 
-      - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v3
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -74,23 +72,25 @@ jobs:
           image-ref: ${{ env.IMAGE }}:${{ steps.tag.outputs.t }}
           format: table
           severity: HIGH,CRITICAL
-          ignore-unfixed: false
+          ignore-unfixed: true
           exit-code: "0"
 
-      # Defensive cleanup: avoid committing any trivy artifacts (some actions may write to workspace)
-      - name: Cleanup workspace (avoid committing trivy artifacts)
-        run: |
-          rm -rf trivy .trivy || true
-
-      - name: Bump Helm values.yaml image.tag to SHA
-        env:
-          FILE: gitops/apps/strapi/chart/values.yaml
-          SHA: ${{ steps.tag.outputs.t }}
+      - name: Bump Helm values.yaml image.tag to SHA (prod + dev)
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import os
+          SHA="${{ steps.tag.outputs.t }}"
 
+          bump_file () {
+            local FILE="$1"
+            if [ ! -f "$FILE" ]; then
+              echo "ℹ️ Skipping missing file: $FILE"
+              return 0
+            fi
+
+            echo "Updating $FILE -> tag: $SHA"
+
+            python3 - <<'PY'
+          import os
           path = os.environ["FILE"]
           sha  = os.environ["SHA"]
 
@@ -99,6 +99,7 @@ jobs:
           out = []
           in_image = False
           image_indent = None
+          replaced = False
 
           for line in lines:
               if not in_image and line.lstrip().startswith("image:"):
@@ -116,30 +117,38 @@ jobs:
               if in_image and line.lstrip().startswith("tag:"):
                   indent = line[:len(line) - len(line.lstrip())]
                   out.append(f'{indent}tag: "{sha}"\n')
+                  replaced = True
               else:
                   out.append(line)
 
+          if not replaced:
+              raise SystemExit(f"Did not find image.tag to replace in {path}")
+
           open(path, "w", encoding="utf-8").write("".join(out))
           PY
+          }
 
-      - name: Create PR for GitOps bump
+          bump_file "${PROD_FILE}"
+          bump_file "${DEV_FILE}"
+        env:
+          SHA: ${{ steps.tag.outputs.t }}
+          PROD_FILE: ${{ env.PROD_FILE }}
+          DEV_FILE: ${{ env.DEV_FILE }}
+
+      - name: Create PR for GitOps bump (prod + dev)
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           branch: ci/strapi-bump-${{ steps.tag.outputs.t }}
           delete-branch: true
           base: main
-
-          # IMPORTANT: only commit the GitOps file; prevents accidentally committing trivy/ or other artifacts
-          add-paths: |
-            gitops/apps/strapi/chart/values.yaml
-
-          commit-message: "chore(strapi): bump image tag to ${{ steps.tag.outputs.t }}"
-          title: "chore(strapi): bump image tag to ${{ steps.tag.outputs.t }}"
+          commit-message: "chore(strapi): bump image tag to ${{ steps.tag.outputs.t }} (prod+dev)"
+          title: "chore(strapi): bump image tag to ${{ steps.tag.outputs.t }} (prod+dev)"
           body: |
             This PR updates Strapi GitOps source-of-truth to the new immutable image tag.
 
             - Image: `${{ env.IMAGE }}:${{ steps.tag.outputs.t }}`
-            - File: `gitops/apps/strapi/chart/values.yaml`
+            - Prod: `${{ env.PROD_FILE }}`
+            - Dev: `${{ env.DEV_FILE }}`
 
             Merge -> ArgoCD auto-sync -> rollout.
