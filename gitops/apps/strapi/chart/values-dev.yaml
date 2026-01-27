@@ -1,0 +1,30 @@
+image:
+  repository: ghcr.io/cyrixrr/strapi
+  tag: "CHANGE_ME"   # CI can bump this
+  pullPolicy: IfNotPresent
+
+service:
+  type: NodePort
+  port: 1337
+  nodePort: 31338    # dev uses different NodePort to avoid clash with prod
+
+persistence:
+  enabled: true
+  storageClass: nfs-client
+  size: 10Gi
+  mountPath: /opt/app/public/uploads
+
+database:
+  host: strapi-postgresql
+  port: 5432
+  name: strapi
+  username: strapi
+  passwordSecret:
+    name: strapi-postgres-credentials
+    key: password
+
+strapiSecrets:
+  name: strapi-secrets
+
+env:
+  NODE_ENV: "development"
