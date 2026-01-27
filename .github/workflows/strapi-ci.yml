@@ -75,6 +75,13 @@ jobs:
         working-directory: strapi
         run: npm ci
 
+      # Simple lint test TypeScript typecheck step
+
+      - name: Typecheck (tsc)
+        working-directory: strapi
+        run: npm run typecheck
+
+
       - name: Build Strapi admin (strapi/)
         working-directory: strapi
         run: npm run build
