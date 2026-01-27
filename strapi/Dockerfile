@@ -13,25 +13,46 @@
 # -------------------------
 # Stage 1: Build
 # -------------------------
-FROM node:20-alpine AS build          # Base image for building (Node 20 on Alpine, small & common)
-WORKDIR /app                         # Set working directory inside the container
 
-COPY package*.json ./                # Copy package.json + package-lock.json first (enables Docker layer caching)
-RUN npm ci                           # Install dependencies EXACTLY from package-lock.json (reproducible builds)
+# Base image for building (Node 20 on Alpine, small & common)
+FROM node:20-alpine AS build
 
-COPY . .                             # Copy the rest of the Strapi source code into the image
-RUN npm run build                    # Build Strapi admin panel/assets (compile frontend, etc.)
+# Set working directory inside the container
+WORKDIR /app
+
+# Copy package.json + package-lock.json first (enables Docker layer caching)
+COPY package*.json ./
+
+# Install dependencies EXACTLY from package-lock.json (reproducible builds)
+RUN npm ci
+
+# Copy the rest of the Strapi source code into the image
+COPY . .
+
+# Build Strapi admin panel/assets (compile frontend, etc.)
+RUN npm run build
 
 # -------------------------
 # Stage 2: Runtime
 # -------------------------
-FROM node:20-alpine                  # Fresh clean runtime image (does NOT inherit build-stage layers)
-WORKDIR /app                         # Working directory for the running app
 
-COPY package*.json ./                # Copy package manifests again into runtime stage
-RUN npm ci --omit=dev                # Install ONLY production dependencies (smaller image, fewer attack surface)
+# Fresh clean runtime image (does NOT inherit build-stage layers)
+FROM node:20-alpine
 
-COPY --from=build /app ./            # Copy the FULL prepared app from build stage (including built admin assets)
+# Working directory for the running app
+WORKDIR /app
 
-EXPOSE 1337                          # Document that Strapi listens on port 1337 (K8s will map it via Service)
-CMD ["npm", "run", "start"]          # Start Strapi (NODE_ENV should come from Kubernetes env, not Dockerfile)
+# Copy package manifests again into runtime stage
+COPY package*.json ./
+
+# Install ONLY production dependencies (smaller image, fewer attack surface)
+RUN npm ci --omit=dev
+
+# Copy the FULL prepared app from build stage (including built admin assets)
+COPY --from=build /app ./
+
+# Document that Strapi listens on port 1337 (K8s will map it via Service)
+EXPOSE 1337
+
+# Start Strapi (NODE_ENV should come from Kubernetes env, not Dockerfile)
+CMD ["npm", "run", "start"]
