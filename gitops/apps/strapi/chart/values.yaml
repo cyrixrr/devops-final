@@ -25,3 +25,6 @@ database:
 
 strapiSecrets:
   name: strapi-secrets
+
+env:
+  NODE_ENV: "production"
