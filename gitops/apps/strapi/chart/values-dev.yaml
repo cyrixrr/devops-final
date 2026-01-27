@@ -15,7 +15,7 @@ persistence:
   mountPath: /opt/app/public/uploads
 
 database:
-  host: strapi-postgresql
+  host: strapi-postgresql.strapi.svc.cluster.local  #Not good but anyway this host does not exists in strapi-dev namespace
   port: 5432
   name: strapi
   username: strapi
