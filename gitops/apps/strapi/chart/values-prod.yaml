@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/cyrixrr/strapi
-  tag: "CHANGE_ME"   # CI can bump this (or promotion workflow bumps it)
+  tag: "2535a4983cc4cb9cdaeb8200d6affe21237fcd56"
   pullPolicy: IfNotPresent
 
 service:
