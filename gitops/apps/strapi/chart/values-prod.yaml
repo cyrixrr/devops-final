@@ -3,7 +3,7 @@ image:
   tag: "4b568f21af92528136d738df053d0fba3d3ba337"
   pullPolicy: IfNotPresent
 
-replicaCount: 103 
+replicaCount: 5 
 
 service:
   type: NodePort
