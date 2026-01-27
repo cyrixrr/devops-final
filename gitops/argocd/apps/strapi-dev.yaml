@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: strapi
+  name: strapi-dev
   namespace: argocd
 spec:
   project: default
@@ -11,13 +11,13 @@ spec:
     targetRevision: main
     path: gitops/apps/strapi/chart
     helm:
-      releaseName: strapi
+      releaseName: strapi-dev
       valueFiles:
-        - values-prod.yaml
+        - values-dev.yaml
 
   destination:
     server: https://kubernetes.default.svc
-    namespace: strapi
+    namespace: strapi-dev
 
   syncPolicy:
     automated:
