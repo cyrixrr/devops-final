@@ -1,31 +1,74 @@
 ---
+# =============================================================================
+# PLAY 1: Install/ensure K3s SERVER (control-plane)
+# Runs ONLY on the inventory group [server] (your dell-optiplex-1).
+#
+# What this play does:
+#   1) Downloads the official K3s install script locally on the node (no curl|sh pipe).
+#   2) Installs K3s server pinned to a specific version (idempotent via service file check).
+#   3) Ensures the k3s systemd service is enabled + started.
+#   4) Reads the cluster node-token so agent nodes can join the cluster.
+# =============================================================================
 - name: Install/ensure k3s server (control-plane)
+  # Your hosts.ini defines:
+  #   [server] dell-optiplex-1 ansible_host=192.168.0.100
   hosts: server
+
+  # Need root to install binaries, systemd services, write /var/lib/rancher, etc.
   become: true
+
+  # Facts used for general OS detection/debug, and useful in output.
   gather_facts: true
 
   vars:
+    # Pin K3s version so your cluster is reproducible and stable across rebuilds.
     k3s_version: "v1.30.6+k3s1"
+
+    # Where we store the installer script on the node.
+    # Using a file avoids "curl ... | sh" and makes auditing easier.
     k3s_install_script: /usr/local/src/k3s-install.sh
 
   tasks:
+    # -------------------------------------------------------------------------
+    # Create the folder that will hold the script.
+    # Idempotent: if it exists, Ansible does nothing.
+    # -------------------------------------------------------------------------
     - name: Ensure install script directory exists
       ansible.builtin.file:
         path: /usr/local/src
         state: directory
         mode: "0755"
 
+    # -------------------------------------------------------------------------
+    # Download installer script in a safe, auditable way (no pipe to shell).
+    # mode 0755 => executable.
+    # -------------------------------------------------------------------------
     - name: Download k3s install script (no curl|sh)
       ansible.builtin.get_url:
         url: https://get.k3s.io
         dest: "{{ k3s_install_script }}"
         mode: "0755"
 
+    # -------------------------------------------------------------------------
+    # Idempotency guard:
+    # If /etc/systemd/system/k3s.service exists, K3s server is already installed.
+    # We'll only run the install step when it does NOT exist.
+    # -------------------------------------------------------------------------
     - name: Check if k3s server service exists
       ansible.builtin.stat:
         path: /etc/systemd/system/k3s.service
       register: k3s_server_svc
 
+    # -------------------------------------------------------------------------
+    # Install K3s server by executing the previously downloaded local script.
+    # Key points:
+    #  - Uses environment var INSTALL_K3S_VERSION to pin version.
+    #  - "server" argument installs control-plane components.
+    #  - --write-kubeconfig-mode 644 allows non-root reading kubeconfig on the node.
+    # NOTE:
+    #  - This is still "running a command", but it avoids *shelling* (no bash pipe).
+    #  - It’s the cleanest approach while still using the official install method.
+    # -------------------------------------------------------------------------
     - name: Install k3s server (runs local script)
       ansible.builtin.command:
         cmd: "{{ k3s_install_script }} server --write-kubeconfig-mode 644"
@@ -33,67 +76,127 @@
         INSTALL_K3S_VERSION: "{{ k3s_version }}"
       when: not k3s_server_svc.stat.exists
 
+    # -------------------------------------------------------------------------
+    # Ensure k3s is enabled on boot and currently started.
+    # If it’s already running, Ansible will keep it as-is.
+    # -------------------------------------------------------------------------
     - name: Ensure k3s service is enabled and started
       ansible.builtin.systemd:
         name: k3s
         enabled: true
         state: started
 
+    # -------------------------------------------------------------------------
+    # Wait until the server writes the node-token file.
+    # This token is needed by agents to join the cluster.
+    # -------------------------------------------------------------------------
     - name: Wait for server node-token to exist
       ansible.builtin.wait_for:
         path: /var/lib/rancher/k3s/server/node-token
         timeout: 120
 
+    # -------------------------------------------------------------------------
+    # Read the node-token content from the server.
+    # slurp returns base64 content, so we decode it in the next task.
+    # -------------------------------------------------------------------------
     - name: Read cluster node-token (for agents)
       ansible.builtin.slurp:
         src: /var/lib/rancher/k3s/server/node-token
       register: node_token_raw
 
+    # -------------------------------------------------------------------------
+    # Store the decoded token as a fact on the SERVER host.
+    # Agents will access it via hostvars[server].k3s_node_token.
+    # -------------------------------------------------------------------------
     - name: Set token fact (shared via hostvars)
       ansible.builtin.set_fact:
         k3s_node_token: "{{ node_token_raw.content | b64decode | trim }}"
 
 
+# =============================================================================
+# PLAY 2: Install/ensure K3s AGENTS (workers)
+# Runs ONLY on inventory group [agents] (hp-prodesk-1, hp-prodesk-2).
+#
+# What this play does:
+#   1) Determines which host is the server (groups['server'][0]).
+#   2) Builds K3S_URL to talk to the API server on port 6443.
+#   3) Pulls the token fact from the server hostvars.
+#   4) Downloads the installer script locally (no curl|sh).
+#   5) Installs K3s agent if not already installed, then starts/enables service.
+# =============================================================================
 - name: Install/ensure k3s agents
   hosts: agents
   become: true
   gather_facts: true
 
   vars:
+    # Must match server version to avoid skew.
     k3s_version: "v1.30.6+k3s1"
+
+    # Same script location on agents.
     k3s_install_script: /usr/local/src/k3s-install.sh
 
   pre_tasks:
+    # -------------------------------------------------------------------------
+    # Pick the first host in the [server] group.
+    # This is why your inventory structure matters:
+    #   [k3s:children] server + agents
+    # -------------------------------------------------------------------------
     - name: Pick the server host from inventory
       ansible.builtin.set_fact:
         _server_host: "{{ groups['server'][0] }}"
 
+    # -------------------------------------------------------------------------
+    # Build the API server URL using the server's ansible_host.
+    # Example becomes: https://192.168.0.100:6443
+    # -------------------------------------------------------------------------
     - name: Build K3S_URL from server ansible_host
       ansible.builtin.set_fact:
         k3s_url: "https://{{ hostvars[_server_host].ansible_host }}:6443"
 
+    # -------------------------------------------------------------------------
+    # Pull the node-token from the server play’s set_fact.
+    # This is why the server play must run first (same ansible run).
+    # -------------------------------------------------------------------------
     - name: Pull K3S_TOKEN from server hostvars
       ansible.builtin.set_fact:
         k3s_token: "{{ hostvars[_server_host].k3s_node_token }}"
 
   tasks:
+    # -------------------------------------------------------------------------
+    # Ensure directory for installer script exists.
+    # -------------------------------------------------------------------------
     - name: Ensure install script directory exists
       ansible.builtin.file:
         path: /usr/local/src
         state: directory
         mode: "0755"
 
+    # -------------------------------------------------------------------------
+    # Download the installer script (safe, auditable).
+    # -------------------------------------------------------------------------
     - name: Download k3s install script (no curl|sh)
       ansible.builtin.get_url:
         url: https://get.k3s.io
         dest: "{{ k3s_install_script }}"
         mode: "0755"
 
+    # -------------------------------------------------------------------------
+    # Idempotency guard: check if k3s-agent service exists.
+    # If it exists, agent is already installed.
+    # -------------------------------------------------------------------------
     - name: Check if k3s-agent service exists
       ansible.builtin.stat:
         path: /etc/systemd/system/k3s-agent.service
       register: k3s_agent_svc
 
+    # -------------------------------------------------------------------------
+    # Install K3s agent by executing local script (no bash piping).
+    # Required environment variables:
+    #  - INSTALL_K3S_VERSION: pin agent version
+    #  - K3S_URL: API server URL
+    #  - K3S_TOKEN: join token
+    # -------------------------------------------------------------------------
     - name: Install k3s agent (runs local script)
       ansible.builtin.command:
         cmd: "{{ k3s_install_script }} agent"
@@ -103,6 +206,9 @@
         K3S_TOKEN: "{{ k3s_token }}"
       when: not k3s_agent_svc.stat.exists
 
+    # -------------------------------------------------------------------------
+    # Ensure the worker agent service is enabled on boot and started now.
+    # -------------------------------------------------------------------------
     - name: Ensure k3s-agent service is enabled and started
       ansible.builtin.systemd:
         name: k3s-agent
