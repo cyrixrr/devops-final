@@ -131,8 +131,8 @@ jobs:
           image-ref: ${{ env.IMAGE }}:${{ steps.tag.outputs.t }}
           format: table
           severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: "0"
+          ignore-unfixed: false
+          exit-code: "1"
 
       # -------------------------
       # 7) GitOps bump (prod + dev)
