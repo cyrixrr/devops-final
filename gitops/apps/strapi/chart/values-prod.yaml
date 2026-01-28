@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/cyrixrr/strapi
-  tag: "792fde6aed51ee4eaceeec8ee83a188f5e0af4c6"
+  tag: "a55f8189d19c3adc49f2ad59261971d2c6acbfeb"
   pullPolicy: IfNotPresent
 
 replicaCount: 5 
