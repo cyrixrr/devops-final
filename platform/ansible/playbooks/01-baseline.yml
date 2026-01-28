@@ -1,20 +1,51 @@
 ---
+# =============================================================================
+# PLAY: Baseline Linux configuration for k3s nodes
+# Goal:
+#   Prepare every node (server + agents) with the Linux prerequisites that
+#   Kubernetes/K3s expects: packages, swap OFF, required kernel modules,
+#   and sysctl networking settings.
+# Why this matters:
+#   - K8s requires swap disabled (kubelet will complain / fail).
+#   - CNI networking needs br_netfilter + ip_forward for pod-to-pod traffic.
+#   - iptables / nfs tools are commonly needed in real clusters.
+# =============================================================================
 - name: Baseline Linux configuration for k3s nodes
+  # Inventory group "k3s" (your hosts.ini has [k3s:children] server + agents)
   hosts: k3s
+
+  # Run tasks as root (sudo). Needed for packages, sysctl, kernel modules, fstab edits.
   become: true
+
+  # Collect facts (OS family, distro, etc.). We use this for the Debian apt condition.
   gather_facts: true
 
   vars:
+    # Kernel modules Kubernetes networking needs:
+    # - overlay: required for container filesystem overlay
+    # - br_netfilter: allows iptables to see bridged traffic (pods)
     k3s_required_modules:
       - overlay
       - br_netfilter
 
+    # sysctl settings for Kubernetes networking:
+    # - bridge-nf-call-iptables/ip6tables: send bridged traffic through iptables rules
+    # - ip_forward: allow routing (pods <-> nodes <-> services)
     k3s_sysctl:
       net.bridge.bridge-nf-call-iptables: 1
       net.bridge.bridge-nf-call-ip6tables: 1
       net.ipv4.ip_forward: 1
 
   tasks:
+    # -------------------------------------------------------------------------
+    # 1) Install baseline OS packages
+    # Why:
+    #  - curl + ca-certificates: used by installers / fetching repos / TLS downloads
+    #  - iptables + iptables-persistent: K8s networking and persistence across reboot
+    #  - nfs-common: required because you use NFS storageClass (nfs-client provisioner)
+    # Notes:
+    #  - Only runs on Debian-family OS (Ubuntu/Debian). Safe if you add other distros later.
+    # -------------------------------------------------------------------------
     - name: Install baseline packages (Debian/Ubuntu)
       ansible.builtin.apt:
         name:
@@ -23,28 +54,65 @@
           - iptables
           - iptables-persistent
           - nfs-common
-        state: present
-        update_cache: true
+        state: present              # ensure installed
+        update_cache: true          # apt update first (avoid "package not found" on fresh nodes)
       when: ansible_facts.os_family == "Debian"
 
+    # -------------------------------------------------------------------------
+    # 2) Disable swap (runtime) by removing swap mounts
+    # Why:
+    #   Kubernetes expects swap OFF. With swap ON, kubelet may refuse to run
+    #   or you'll hit performance/scheduling issues.
+    # How:
+    #   This task ensures any active swap mount entries are removed (state: absent).
+    #   It is an Ansible-native approach (no 'swapoff -a' shelling).
+    # -------------------------------------------------------------------------
     - name: Disable swap now (remove swap mounts)
       ansible.builtin.mount:
         name: none
         fstype: swap
         state: absent
 
+    # -------------------------------------------------------------------------
+    # 3) Disable swap persistently by commenting swap lines in /etc/fstab
+    # Why:
+    #   Even if swap is disabled now, it will come back after reboot if fstab has swap.
+    # How:
+    #   Replace any non-commented swap lines with the same line prefixed by '#'.
+    # regexp:
+    #   - '^(?!#)' => only lines not already commented
+    #   - '(.*\s+swap\s+.*)$' => a line that contains a swap entry
+    # replace:
+    #   - '# \1' => comment out the whole line (preserve original for audit/debug)
+    # -------------------------------------------------------------------------
     - name: Comment swap entries in /etc/fstab (persist)
       ansible.builtin.replace:
         path: /etc/fstab
         regexp: '^(?!#)(.*\s+swap\s+.*)$'
         replace: '# \1'
 
+    # -------------------------------------------------------------------------
+    # 4) Load required kernel modules immediately (without reboot)
+    # Why:
+    #   K3s/CNI networking expects these modules present right now.
+    # How:
+    #   community.general.modprobe loads kernel modules properly (no shell).
+    # loop:
+    #   Apply to each module in k3s_required_modules list.
+    # -------------------------------------------------------------------------
     - name: Ensure required kernel modules are loaded now
       community.general.modprobe:
         name: "{{ item }}"
         state: present
       loop: "{{ k3s_required_modules }}"
 
+    # -------------------------------------------------------------------------
+    # 5) Persist kernel modules across reboot
+    # Why:
+    #   Module loaded now is not guaranteed to persist after reboot.
+    # How:
+    #   Create /etc/modules-load.d/k3s.conf listing modules to auto-load on boot.
+    # -------------------------------------------------------------------------
     - name: Persist required kernel modules on boot
       ansible.builtin.copy:
         dest: /etc/modules-load.d/k3s.conf
@@ -53,6 +121,13 @@
           overlay
           br_netfilter
 
+    # -------------------------------------------------------------------------
+    # 6) Persist sysctl settings for Kubernetes networking
+    # Why:
+    #   sysctl values can reset on reboot; we want them always correct.
+    # How:
+    #   Put them into /etc/sysctl.d/99-k3s.conf (standard Linux sysctl drop-in).
+    # -------------------------------------------------------------------------
     - name: Persist sysctl for Kubernetes networking
       ansible.builtin.copy:
         dest: /etc/sysctl.d/99-k3s.conf
@@ -62,6 +137,23 @@
           net.bridge.bridge-nf-call-ip6tables = 1
           net.ipv4.ip_forward = 1
 
+    # -------------------------------------------------------------------------
+    # 7) Apply sysctl settings immediately (Ansible-native)
+    # Why:
+    #   We want the values active now, not only after reboot.
+    # Instructor note:
+    #   This replaces "sysctl --system" shelling with ansible.posix.sysctl.
+    # loop:
+    #   dict2items converts:
+    #     { key1: val1, key2: val2 }
+    #   into:
+    #     - { key: key1, value: val1 }
+    #     - { key: key2, value: val2 }
+    # reload: true:
+    #   Apply the sysctl immediately.
+    # state: present:
+    #   Ensure the sysctl is set and persisted.
+    # -------------------------------------------------------------------------
     - name: Apply sysctl settings (no sysctl --system)
       ansible.posix.sysctl:
         name: "{{ item.key }}"
